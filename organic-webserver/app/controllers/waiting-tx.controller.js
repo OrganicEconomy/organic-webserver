@@ -1,4 +1,4 @@
-import WaitingTx from "../models/waiting-tx.model.js";
+import { WaitingTx } from "../models.js";
 
 export async function create(req, res) {
     if (!req.body.tx) {
@@ -19,4 +19,7 @@ export async function create(req, res) {
                     err.message || "Some error occurred while creating the paper."
             });
         });
+}
+
+export async function list(req, res) {
 }

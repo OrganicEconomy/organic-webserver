@@ -13,13 +13,17 @@
   "type": "module",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "mocha -r dotenv/config"
   },
   "dependencies": {
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
+    "organic-money": "^0.1.11",
     "pg": "^8.16.3",
     "pg-hstore": "^2.3.4",
     "sequelize": "^6.37.7"
+  },
+  "devDependencies": {
+    "mocha": "^11.7.5"
   }
 }

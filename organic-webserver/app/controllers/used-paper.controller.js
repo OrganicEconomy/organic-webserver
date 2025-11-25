@@ -1,4 +1,4 @@
-import UsedPaper from "../models/used-paper.model.js";
+import { UsedPaper } from "../models.js";
 
 export async function create(req, res) {
     if (!req.body.papers) {

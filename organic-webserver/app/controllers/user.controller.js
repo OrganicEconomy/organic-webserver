@@ -1,9 +1,15 @@
-import User from "../models/user.model.js";
+import { User, WaitingTx } from "../models.js";
 
-export function create(req, res) {
+import { validateBlockchain, updateLastBlock, signLastBlock } from '../services/blockchain.service.js'
+
+/**
+ * TODO: hash the password before save
+ * 
+ */
+export async function createUser(req, res) {
     if (!req.body.publickey) {
         res.status(400).send({
-            message: "Content can not be empty!"
+            message: "Content cannot be empty!"
         });
         return;
     }
@@ -14,68 +20,83 @@ export function create(req, res) {
         mail: req.body.mail,
         password: req.body.password,
         secretkey: req.body.secretkey,
-        blockchain: req.body.blockchain,
+        blocks: req.body.blocks
     };
 
-    User.create(user)
-        .then(data => {
-            res.send(data);
-        })
-        .catch(err => {
-            res.status(500).send({
-                message:
-                    err.message || "Some error occurred while creating the User."
-            });
+    user.blocks = validateBlockchain(user.blocks)
+
+    try {
+        const data = await User.create(user)
+        res.send(data)
+    } catch (err) {
+        res.status(500).send({
+            message:
+                err.message || "Some error occurred while creating the User."
         });
+    }
+}
+
+async function removeWaitingTransactions(lastblock, targetpk) {
+    await WaitingTx.destroy({
+        where: {
+            [Op.in]: lastblock.transactions.filter(tx => tx.target === targetpk).map(tx => tx.hash),
+        }
+    })
 }
 
 /**
- * TODO: Check if transactions are in the "waiting-tx" table and, if yes, remove them.
+ * Save the given block for user of given publickey
+ * Then remove from database every WaitingTx found in that block
+ * (because they are no more waiting)
+ * @param {*} req 
+ * @param {*} res 
  */
-export function update(req, res) {
+export async function saveUser(req, res) {
     const publickey = req.params.publickey;
+    const lastblock = req.params.block;
 
-    User.update(req.body, {
-        where: { publickey: publickey }
-    })
-        .then(num => {
-            if (num == 1) {
-                res.send({
-                    message: "User was updated successfully."
-                });
-            } else {
-                res.send({
-                    message: `Cannot update User with pk=${publickey}. Maybe User was not found or req.body is empty!`
-                });
-            }
-        })
-        .catch(err => {
-            res.status(500).send({
-                message: "Error updating User with pk=" + publickey
-            });
-        });
+    const user = await User.findAll({
+        where: {
+            publickey: publickey
+        }
+    })[0]
+
+    user.blocks = updateLastBlock(user.blocks, lastblock)
+
+    try {
+        const num = await user.save()
+        if (num == 1) {
+            await removeWaitingTransactions(user.blocks[0], publickey)
+            res.send({ message: "User was updated successfully." });
+        } else {
+            res.send({ message: `Cannot update User with pk=${publickey}. Maybe User was not found or req.body is empty!` });
+        }
+    } catch (err) {
+        res.status(500).send({ message: "Error updating User with pk=" + publickey });
+    }
 }
 
-export function signAndUpdate(req, res) {
+export async function signAndSaveUser(req, res) {
     const publickey = req.params.publickey;
+    const lastblock = req.params.block;
 
-    User.update(req.body, {
-        where: { publickey: publickey }
-    })
-        .then(num => {
-            if (num == 1) {
-                res.send({
-                    message: "User was updated successfully."
-                });
-            } else {
-                res.send({
-                    message: `Cannot update User with pk=${publickey}. Maybe User was not found or req.body is empty!`
-                });
-            }
-        })
-        .catch(err => {
-            res.status(500).send({
-                message: "Error updating User with pk=" + publickey
-            });
-        });
+    const user = await User.findAll({
+        where: {
+            publickey: publickey
+        }
+    })[0]
+
+    user.blocks = updateLastBlock(user.blocks, lastblock)
+        .signLastBlock(user.blocks)
+
+    try {
+        const num = await user.save()
+        if (num == 1) {
+            res.send({ message: "User was updated successfully." });
+        } else {
+            res.send({ message: `Cannot update User with pk=${publickey}. Maybe User was not found or req.body is empty!` });
+        }
+    } catch (err) {
+        res.status(500).send({ message: "Error updating User with pk=" + publickey });
+    }
 }

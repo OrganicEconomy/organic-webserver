@@ -2,7 +2,7 @@ import express from 'express';
 import fs from 'fs';
 import https from 'https';
 import 'dotenv/config';
-import db from "./app/models/index.js";
+import { sequelize } from "./app/models.js";
 import papersroutes from "./app/routes/used-papers.routes.js";
 import usersroute from "./app/routes/users.routes.js";
 import txroutes from "./app/routes/waiting-tx.routes.js";
@@ -14,6 +14,8 @@ const credentials = { key: privateKey, cert: certificate };
 const app = express();
 const PORT = process.env.NODE_DOCKER_PORT || 8080;
 
+app.use(express.json()); 
+
 app.use((req, res, next) => {
     res.header("Access-Control-Allow-Origin", '*');
     res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
@@ -21,14 +23,12 @@ app.use((req, res, next) => {
     next();
 });
 
-db.sequelize.sync()
-    .then(() => {
-        console.log("Synced db.");
-    })
-    .catch((err) => {
-        console.log("Failed to sync db: " + err.message);
-    });
-
+try {
+    await sequelize.sync()
+    console.log("Synced db.");
+} catch (err) {
+    console.log("Failed to sync db: " + err.message);
+}
 
 const httpsServer = https.createServer(credentials, app);
 
