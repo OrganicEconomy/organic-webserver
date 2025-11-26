@@ -11,7 +11,6 @@ export function validateBlockchain(blocks) {
     return blockchain.blocks
 }
 
-
 export function updateLastBlock(blocks, lastblock) {
     const blockchain = new CitizenBlockchain(blocks)
 
@@ -31,4 +30,8 @@ export function signLastBlock(blocks) {
         blockchain.sealLastBlock(SECRETKEY)
     }
     return blockchain.blocks
+}
+
+export function isValidTransaction(tx) {
+    return Blockchain.isValidTransaction(tx)
 }

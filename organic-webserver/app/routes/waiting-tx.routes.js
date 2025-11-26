@@ -1,12 +1,12 @@
-import { create, list } from "../controllers/waiting-tx.controller.js";
+import { createWaitingTx, listWaitingTx } from "../controllers/waiting-tx.controller.js";
 import express from "express";
 
 export default app => {
     var router = express.Router();
 
-    router.post("/send", create);
+    router.post("/send", createWaitingTx);
 
-    router.get("/list", list);
+    router.get("/list", listWaitingTx);
 
     app.use('/api/tx', router);
 };

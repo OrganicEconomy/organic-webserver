@@ -4,12 +4,10 @@ import { Op } from 'sequelize'
 import { validateBlockchain, updateLastBlock, signLastBlock } from '../services/blockchain.service.js'
 
 export async function loginUser(req, res) {
-    const email = req.query.email;
+    const mail = req.query.mail;
     const password = req.query.password;
-    console.log(req.query)
-    console.log(email, password)
 
-    const user = await User.findOne({ where: { mail: email, password: password } });
+    const user = await User.findOne({ where: { mail: mail, password: password } });
 
     if (user === null) {
         res.status(404).send({ message: "User not found or invalid password"});

@@ -19,7 +19,8 @@ const sequelize = new Sequelize(DB, USER, PASSWORD, {
 const User = sequelize.define("user", {
     publickey: {
         type: Sequelize.STRING(70),
-        allowNull: false
+        allowNull: false,
+        primaryKey: true,
     },
     name: {
         type: Sequelize.STRING,
@@ -44,14 +45,23 @@ const User = sequelize.define("user", {
 });
 
 const UsedPaper = sequelize.define("usedpaper", {
-    id: {
+    hash: {
         type: Sequelize.STRING(70),
-        primaryKey: true
+        primaryKey: true,
+    },
+    tx: {
+        type: Sequelize.JSON,
+        allowNull: false
     }
 });
 
 const WaitingTx = sequelize.define("waitingtx", {
     hash: {
+        type: Sequelize.STRING,
+        allowNull: false,
+        primaryKey: true
+    },
+    target: {
         type: Sequelize.STRING,
         allowNull: false
     },
