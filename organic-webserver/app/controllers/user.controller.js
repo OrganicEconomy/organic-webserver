@@ -1,6 +1,22 @@
-import { User, WaitingTx } from "../models.js";
+import { User, WaitingTx } from "../models.js"
+import { Op } from 'sequelize'
 
 import { validateBlockchain, updateLastBlock, signLastBlock } from '../services/blockchain.service.js'
+
+export async function loginUser(req, res) {
+    const email = req.query.email;
+    const password = req.query.password;
+    console.log(req.query)
+    console.log(email, password)
+
+    const user = await User.findOne({ where: { mail: email, password: password } });
+
+    if (user === null) {
+        res.status(404).send({ message: "User not found or invalid password"});
+        return
+    }
+    res.send(user)
+}
 
 /**
  * TODO: hash the password before save
@@ -37,6 +53,13 @@ export async function createUser(req, res) {
 }
 
 async function removeWaitingTransactions(lastblock, targetpk) {
+    console.log("removeWaitingTransactions")
+    const hashList = lastblock.transactions.filter(tx => tx.target === targetpk).map(tx => tx.hash)
+    console.log("hashList:")
+    console.log(hashList)
+    if (hashList.length === 0) {
+        return
+    }
     await WaitingTx.destroy({
         where: {
             [Op.in]: lastblock.transactions.filter(tx => tx.target === targetpk).map(tx => tx.hash),
@@ -48,55 +71,37 @@ async function removeWaitingTransactions(lastblock, targetpk) {
  * Save the given block for user of given publickey
  * Then remove from database every WaitingTx found in that block
  * (because they are no more waiting)
- * @param {*} req 
- * @param {*} res 
  */
 export async function saveUser(req, res) {
-    const publickey = req.params.publickey;
-    const lastblock = req.params.block;
+    const publickey = req.body.publickey;
+    const lastblock = req.body.block;
 
-    const user = await User.findAll({
-        where: {
-            publickey: publickey
-        }
-    })[0]
+    const user = await User.findOne({ where: { publickey: publickey } });
 
     user.blocks = updateLastBlock(user.blocks, lastblock)
 
     try {
-        const num = await user.save()
-        if (num == 1) {
-            await removeWaitingTransactions(user.blocks[0], publickey)
-            res.send({ message: "User was updated successfully." });
-        } else {
-            res.send({ message: `Cannot update User with pk=${publickey}. Maybe User was not found or req.body is empty!` });
-        }
+        await user.save()
+        await removeWaitingTransactions(user.blocks[0], publickey)
+        res.send({ message: "User was updated successfully." });
     } catch (err) {
-        res.status(500).send({ message: "Error updating User with pk=" + publickey });
+        res.status(500).send({ message: `Error updating User with pk=${publickey} : "${err}"`});
     }
 }
 
 export async function signAndSaveUser(req, res) {
-    const publickey = req.params.publickey;
-    const lastblock = req.params.block;
+    const publickey = req.body.publickey;
+    const lastblock = req.body.block;
 
-    const user = await User.findAll({
-        where: {
-            publickey: publickey
-        }
-    })[0]
+    const user = await User.findOne({ where: { publickey: publickey } });
 
     user.blocks = updateLastBlock(user.blocks, lastblock)
-        .signLastBlock(user.blocks)
+    user.blocks = signLastBlock(user.blocks)
 
     try {
-        const num = await user.save()
-        if (num == 1) {
-            res.send({ message: "User was updated successfully." });
-        } else {
-            res.send({ message: `Cannot update User with pk=${publickey}. Maybe User was not found or req.body is empty!` });
-        }
+        await user.save()
+        res.send({ message: "User was updated successfully." });
     } catch (err) {
-        res.status(500).send({ message: "Error updating User with pk=" + publickey });
+        res.status(500).send({ message: `Error updating User with pk=${publickey} : "${err}"`});
     }
 }

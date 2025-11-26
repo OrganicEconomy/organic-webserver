@@ -5,7 +5,7 @@ const SECRETKEY = process.env.ORGANIC_SECRET_KEY
 export function validateBlockchain(blocks) {
     const blockchain = new CitizenBlockchain(blocks)
     if (! blockchain.isWaitingValidation()) {
-        throw new Error(`Given blockchain isn't made for validation, coco :  ${blocks}`)
+        throw new Error(`Given blockchain isn't made for validation :  ${blocks}`)
     }
     blockchain.validateAccount(SECRETKEY)
     return blockchain.blocks
@@ -25,7 +25,9 @@ export function updateLastBlock(blocks, lastblock) {
 
 export function signLastBlock(blocks) {
     const blockchain = new CitizenBlockchain(blocks)
-    if (! blockchain.lastblock.hash) {
+    if (blockchain.hasSignedLastBlock()) {
+        throw new Error(`Given block is already signed.`)
+    } else {
         blockchain.sealLastBlock(SECRETKEY)
     }
     return blockchain.blocks
