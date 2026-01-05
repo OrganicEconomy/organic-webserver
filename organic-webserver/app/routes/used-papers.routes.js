@@ -5,7 +5,7 @@ import express from "express";
 export default app => {
     var router = express.Router();
 
-    router.post("/add", create);
+    router.post("/cash", create);
 
     app.use('/api/papers', router);
 };

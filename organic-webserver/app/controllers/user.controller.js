@@ -10,7 +10,7 @@ export async function loginUser(req, res) {
     const user = await User.findOne({ where: { mail: mail, password: password } });
 
     if (user === null) {
-        res.status(404).send({ message: "User not found or invalid password"});
+        res.status(404).send({ message: "User not found or invalid password" });
         return
     }
     res.send(user)
@@ -22,9 +22,27 @@ export async function loginUser(req, res) {
  */
 export async function createUser(req, res) {
     if (!req.body.publickey) {
-        res.status(400).send({
-            message: "Content cannot be empty!"
-        });
+        res.status(400).send({ message: "publickey cannot be empty!" });
+        return;
+    }
+    if (!req.body.name) {
+        res.status(400).send({ message: "name cannot be empty!" });
+        return;
+    }
+    if (!req.body.mail) {
+        res.status(400).send({ message: "mail cannot be empty!" });
+        return;
+    }
+    if (!req.body.password) {
+        res.status(400).send({ message: "password cannot be empty!" });
+        return;
+    }
+    if (!req.body.secretkey) {
+        res.status(400).send({ message: "secretkey cannot be empty!" });
+        return;
+    }
+    if (!req.body.blocks) {
+        res.status(400).send({ message: "blocks cannot be empty!" });
         return;
     }
 
@@ -60,7 +78,9 @@ async function removeWaitingTransactions(lastblock, targetpk) {
     }
     await WaitingTx.destroy({
         where: {
-            [Op.in]: lastblock.transactions.filter(tx => tx.target === targetpk).map(tx => tx.hash),
+            hash: {
+                [Op.in]: hashList,
+            }
         }
     })
 }
@@ -83,7 +103,7 @@ export async function saveUser(req, res) {
         await removeWaitingTransactions(user.blocks[0], publickey)
         res.send({ message: "User was updated successfully." });
     } catch (err) {
-        res.status(500).send({ message: `Error updating User with pk=${publickey} : "${err}"`});
+        res.status(500).send({ message: `Error updating User with pk=${publickey} : "${err}"` });
     }
 }
 
@@ -100,6 +120,6 @@ export async function signAndSaveUser(req, res) {
         await user.save()
         res.send({ message: "User was updated successfully." });
     } catch (err) {
-        res.status(500).send({ message: `Error updating User with pk=${publickey} : "${err}"`});
+        res.status(500).send({ message: `Error updating User with pk=${publickey} : "${err}"` });
     }
 }

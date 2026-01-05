@@ -8,6 +8,18 @@ The organic economy application stands on 3 things :
 - a POSTGRES database (a very small one);
 - a webapp (in angularjs).
 
+## Production
+
+Create a .env file at the root of the folder
+
+Make credentials:
+
+```bash
+openssl req -nodes -new -x509 -keyout server.key -out server.cert
+```
+
+And save them in `organic-webserver/organic-webserver/keys/`.
+
 ## Getting started
 
 ### Installation
@@ -118,6 +130,9 @@ Return 200 OK +
 
 ```json
 {
+  publickey,
+  name,
+  mail,
   secretkey,
   blocks
 }
