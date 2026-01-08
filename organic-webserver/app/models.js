@@ -46,12 +46,8 @@ const User = sequelize.define("user", {
 
 const UsedPaper = sequelize.define("usedpaper", {
     hash: {
-        type: Sequelize.STRING(70),
+        type: Sequelize.STRING,
         primaryKey: true,
-    },
-    tx: {
-        type: Sequelize.JSON,
-        allowNull: false
     }
 });
 

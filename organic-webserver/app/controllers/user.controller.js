@@ -69,10 +69,8 @@ export async function createUser(req, res) {
 }
 
 async function removeWaitingTransactions(lastblock, targetpk) {
-    console.log("removeWaitingTransactions")
     const hashList = lastblock.transactions.filter(tx => tx.target === targetpk).map(tx => tx.hash)
-    console.log("hashList:")
-    console.log(hashList)
+
     if (hashList.length === 0) {
         return
     }
