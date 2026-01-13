@@ -1,40 +1,14 @@
-import express from 'express';
-import fs from 'fs';
 import https from 'https';
-import 'dotenv/config';
-import { sequelize } from "./app/models.js";
-import papersroutes from "./app/routes/used-papers.routes.js";
-import usersroute from "./app/routes/users.routes.js";
-import txroutes from "./app/routes/waiting-tx.routes.js";
+import app from "./app.js";
+import fs from 'fs';
 
 const privateKey = fs.readFileSync('keys/server.key');
 const certificate = fs.readFileSync('keys/server.cert');
 const credentials = { key: privateKey, cert: certificate };
 
-const app = express();
 const PORT = process.env.NODE_DOCKER_PORT || 8080;
 
-app.use(express.json()); 
-
-app.use((req, res, next) => {
-    res.header("Access-Control-Allow-Origin", '*');
-    res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-    res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
-    next();
-});
-
-try {
-    await sequelize.sync()
-    console.log("Synced db.");
-} catch (err) {
-    console.log("Failed to sync db: " + err.message);
-}
-
 const httpsServer = https.createServer(credentials, app);
-
-papersroutes(app);
-usersroute(app);
-txroutes(app);
 
 httpsServer.listen(PORT, () => {
     console.log(`Serveur HTTPS démarré sur le port ${PORT}!`);

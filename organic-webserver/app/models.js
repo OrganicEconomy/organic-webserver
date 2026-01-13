@@ -1,20 +1,34 @@
+import Sequelize from "sequelize";
 import { DB, USER, PASSWORD, HOST, dialect as _dialect, port as _port, pool as _pool } from "./config/db.config.js";
 
-import Sequelize from "sequelize";
+const env = process.env.NODE_ENV;
+let sequelize
 
-const sequelize = new Sequelize(DB, USER, PASSWORD, {
-    host: HOST,
-    dialect: _dialect,
-    port: _port,
-    operatorsAliases: false,
+if (env === 'development') {
+    sequelize = new Sequelize({
+        dialect: 'sqlite',
+        storage: 'sequelize.sqlite',
+    });
+} else if (env === 'test') {
+    sequelize = new Sequelize({
+        dialect: 'sqlite',
+        storage: '', // temp storage
+    });
+} else {
+    sequelize = new Sequelize(DB, USER, PASSWORD, {
+        host: HOST,
+        dialect: _dialect,
+        port: _port,
+        operatorsAliases: 0,
 
-    pool: {
-        max: _pool.max,
-        min: _pool.min,
-        acquire: _pool.acquire,
-        idle: _pool.idle
-    }
-});
+        pool: {
+            max: _pool.max,
+            min: _pool.min,
+            acquire: _pool.acquire,
+            idle: _pool.idle
+        }
+    });
+}
 
 const User = sequelize.define("user", {
     publickey: {
@@ -46,14 +60,14 @@ const User = sequelize.define("user", {
 
 const UsedPaper = sequelize.define("usedpaper", {
     hash: {
-        type: Sequelize.STRING,
+        type: Sequelize.STRING(141),
         primaryKey: true,
     }
 });
 
 const WaitingTx = sequelize.define("waitingtx", {
     hash: {
-        type: Sequelize.STRING,
+        type: Sequelize.STRING(141),
         allowNull: false,
         primaryKey: true
     },

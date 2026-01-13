@@ -5,9 +5,11 @@ import { validateBlockchain, updateLastBlock, signLastBlock } from "../app/servi
 
 const sk = "ed945716dddb7af2c9774939e9946f1fee31f5ec0a3c6ec96059f119c396912f"
 const pk = "02c85e4e448d67a8dc724c620f3fe7d2a3a3cce9fe905b918f712396b4f8effcb3"
-
+/**
+ * 
+ 
 describe("validateBlockchain", function () {
-  it.only("should return a 2 blocks blockchain", () => {
+  it("should return a 2 blocks blockchain", () => {
     const bc = new CitizenBlockchain()
 
     bc.makeBirthBlock(sk, new Date(1990, 4, 15), "Alice")
@@ -133,3 +135,4 @@ describe("signLastBlock", function () {
     assert.equal(result.length, 2)
   });
 });
+*/

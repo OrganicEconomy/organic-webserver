@@ -3,7 +3,12 @@ import { Op } from 'sequelize'
 
 import { validateBlockchain, updateLastBlock, signLastBlock } from '../services/blockchain.service.js'
 
-export async function loginUser(req, res) {
+export async function getLoginUser(req, res) {
+    if (!req.query || !req.query.mail || !req.query.password) {
+        res.status(400).send({ message: "Fields 'mail' and 'password' are needed" });
+        return;
+    }
+
     const mail = req.query.mail;
     const password = req.query.password;
 
@@ -18,31 +23,11 @@ export async function loginUser(req, res) {
 
 /**
  * TODO: hash the password before save
- * 
  */
-export async function createUser(req, res) {
-    if (!req.body.publickey) {
-        res.status(400).send({ message: "publickey cannot be empty!" });
-        return;
-    }
-    if (!req.body.name) {
-        res.status(400).send({ message: "name cannot be empty!" });
-        return;
-    }
-    if (!req.body.mail) {
-        res.status(400).send({ message: "mail cannot be empty!" });
-        return;
-    }
-    if (!req.body.password) {
-        res.status(400).send({ message: "password cannot be empty!" });
-        return;
-    }
-    if (!req.body.secretkey) {
-        res.status(400).send({ message: "secretkey cannot be empty!" });
-        return;
-    }
-    if (!req.body.blocks) {
-        res.status(400).send({ message: "blocks cannot be empty!" });
+export async function postRegister(req, res) {
+    if (!req.body || !req.body.publickey || !req.body.name || !req.body.mail
+        || !req.body.password || !req.body.secretkey || !req.body.blocks) {
+        res.status(400).send({ message: "Fields 'publickey', 'name', 'mail', 'password', 'secretkey' and 'blocks' are needed." });
         return;
     }
 
@@ -55,7 +40,13 @@ export async function createUser(req, res) {
         blocks: req.body.blocks
     };
 
-    user.blocks = validateBlockchain(user.blocks)
+    try {
+        user.blocks = validateBlockchain(user.blocks)
+    } catch (err) {
+        res.status(400).send({ message: "Invalid blockchain" });
+        return
+    }
+
 
     try {
         const data = await User.create(user)
@@ -88,7 +79,7 @@ async function removeWaitingTransactions(lastblock, targetpk) {
  * Then remove from database every WaitingTx found in that block
  * (because they are no more waiting)
  */
-export async function saveUser(req, res) {
+export async function putSaveUser(req, res) {
     const publickey = req.body.publickey;
     const lastblock = req.body.block;
 
@@ -105,7 +96,7 @@ export async function saveUser(req, res) {
     }
 }
 
-export async function signAndSaveUser(req, res) {
+export async function putSignAndSaveUser(req, res) {
     const publickey = req.body.publickey;
     const lastblock = req.body.block;
 

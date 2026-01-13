@@ -1,14 +1,21 @@
 import { UsedPaper } from "../models.js";
 
-export async function cashPaper(req, res) {
-    if (!req.body.paperHash) {
-        res.status(400).send({ message: "Field 'paperHash' Needed" });
+/**
+ * hash (141 characters)
+ */
+export async function postCashPaper(req, res) {
+    if (!req.body || !req.body.hash) {
+        res.status(400).send({ message: "Field 'hash' Needed" });
         return;
+    }
+    const hash = req.body.hash
+
+    if (hash.length < 141 || hash.length > 141) {
+        res.status(400).send({ message: "Invalid hash format." });
     }
 
     try {
-        console.log(req.body.paperHash)
-        await UsedPaper.create({ hash: req.body.paperHash })
+        await UsedPaper.create({ hash: hash })
         res.send({ message: "Papers successfully cashed." });
     } catch (err) {
         res.status(500).send({
@@ -18,23 +25,30 @@ export async function cashPaper(req, res) {
     }
 }
 
-export async function isItUsed(req, res) {
-    if (!req.query.paper) {
+/**
+ * hash (141 characters)
+ */
+export async function getIsCashed(req, res) {
+    if (!req.query || !req.query.hash) {
         res.status(400).send({ message: "Content can not be empty!" });
         return;
     }
-    console.log("paper hash:")
-    console.log(req.query.paper)
 
-    const alreadyUsedPaper = await UsedPaper.findOne({ 
+    const hash = req.query.hash
+
+    if (hash.length < 141 || hash.length > 141) {
+        res.status(400).send({ message: "Invalid hash format." });
+    }
+
+    const alreadyUsedPaper = await UsedPaper.findOne({
         where: {
-            hash: req.query.paper,
+            hash: hash,
         }
     });
 
     if (alreadyUsedPaper === null) {
-        res.send(false);
+        res.status(404).send()
     } else {
-        res.send(true);
+        res.send(hash);
     }
 }

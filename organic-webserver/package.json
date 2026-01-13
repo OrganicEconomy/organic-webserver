@@ -13,9 +13,11 @@
   "type": "module",
   "main": "index.js",
   "scripts": {
-    "test": "mocha -r dotenv/config"
+    "server": "node server.js",
+    "test": "NODE_ENV=test mocha"
   },
   "dependencies": {
+    "@sequelize/sqlite3": "^7.0.0-alpha.47",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
     "organic-money": "^0.1.13",
