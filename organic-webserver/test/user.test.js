@@ -140,6 +140,25 @@ describe('POST /users/register', () => {
                 assert.deepEqual(JSON.parse(response.text), expected)
                 return done();
             });
+    });
+});
 
+describe.only('PUT /users/save', () => {
+    it('Should return json format.', (done) => {
+        request(app)
+            .put('/api/users/save')
+            .set('Accept', 'application/json')
+            .expect('Content-Type', /json/, done)
+    });
+
+    it('Should return 404 for unknown user', (done) => {
+        request(app)
+            .put('/api/users/save')
+            .set('Accept', 'application/json')
+            .send({
+                publickey: "1206ffd8f4fe843f5f7183179dcf36f550326813f56ec824911abca9c9d1cd7834",
+                block: []
+            })
+            .expect(404, done)
     });
 });

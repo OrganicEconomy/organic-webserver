@@ -81,10 +81,19 @@ async function removeWaitingTransactions(lastblock, targetpk) {
  * (because they are no more waiting)
  */
 export async function putSaveUser(req, res) {
+    if (!req.body || !req.body.publickey || !req.body.block) {
+        res.status(400).send({ message: "Fields 'publickey' and 'block' are needed." });
+        return;
+    }
+
     const publickey = req.body.publickey;
     const lastblock = req.body.block;
 
     const user = await User.findOne({ where: { publickey: publickey } });
+
+    if (! user) {
+        res.status(404).send()
+    }
 
     user.blocks = updateLastBlock(user.blocks, lastblock)
 
