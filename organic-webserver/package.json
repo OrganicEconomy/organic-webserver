@@ -1,7 +1,7 @@
 {
   "name": "organic-webserver",
   "version": "1.0.0",
-  "description": "An REST API to serve the organic webapp",
+  "description": "A REST API to serve the organic webapp",
   "keywords": [
     "organic",
     "money",
@@ -14,7 +14,7 @@
   "main": "index.js",
   "scripts": {
     "server": "node server.js",
-    "test": "NODE_ENV=test mocha"
+    "test":  "NODE_ENV=test node --env-file=../.env ./node_modules/mocha/bin/mocha"
   },
   "dependencies": {
     "@sequelize/sqlite3": "^7.0.0-alpha.47",

@@ -5,6 +5,10 @@ import papersroutes from "./app/routes/used-papers.routes.js";
 import usersroute from "./app/routes/users.routes.js";
 import txroutes from "./app/routes/waiting-tx.routes.js";
 
+if (!process.env.ORGANIC_SECRET_KEY) {
+    throw new Error('Missing ORGANIC_SECRET_KEY environment variable');
+}
+
 const app = express();
 
 app.use(express.json()); 
