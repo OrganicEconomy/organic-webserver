@@ -50,7 +50,8 @@ export async function postRegister(req, res) {
 
     try {
         const data = await User.create(user)
-        res.send(data)
+        const filtredData = (({ publickey, blocks }) => ({ publickey, blocks }))(data);
+        res.send(filtredData)
     } catch (err) {
         res.status(500).send({
             message:
