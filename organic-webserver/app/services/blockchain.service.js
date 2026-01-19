@@ -24,7 +24,7 @@ export function updateLastBlock(blocks, lastblock) {
 
 export function signLastBlock(blocks) {
     const blockchain = new CitizenBlockchain(blocks)
-    if (blockchain.hasSignedLastBlock()) {
+    if (!!blockchain.lastblock.hash) { // TODO: use Blockchain.isSigned(block)
         throw new Error(`Given block is already signed.`)
     } else {
         blockchain.sealLastBlock(SECRETKEY)

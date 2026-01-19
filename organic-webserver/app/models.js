@@ -8,6 +8,7 @@ if (env === 'test') {
     sequelize = new Sequelize({
         dialect: 'sqlite',
         storage: '', // temp storage
+        logging: false
     });
 } else {
     sequelize = new Sequelize(DB, USER, PASSWORD, {
