@@ -50,8 +50,8 @@ export async function postRegister(req, res) {
 
     try {
         const data = await User.create(user)
-        const filtredData = (({ publickey, blocks }) => ({ publickey, blocks }))(data);
-        res.send(filtredData)
+        const filteredData = (({ publickey, blocks }) => ({ publickey, blocks }))(data);
+        res.send(filteredData)
     } catch (err) {
         res.status(500).send({
             message:
@@ -61,8 +61,8 @@ export async function postRegister(req, res) {
 }
 
 async function removeWaitingTransactions(lastblock, targetpk) {
-    if (!lastblock.transactions) { return }
-    const hashList = lastblock.transactions.filter(tx => tx.target === targetpk).map(tx => tx.hash)
+    if (!lastblock.x) { return }
+    const hashList = lastblock.x.filter(tx => tx.t === targetpk).map(tx => tx.h)
 
     if (hashList.length === 0) {
         return
@@ -89,6 +89,7 @@ export async function putSaveUser(req, res) {
 
     const publickey = req.body.publickey;
     const lastblock = req.body.block;
+    let blocks;
 
     const user = await User.findOne({ where: { publickey: publickey } });
 
@@ -96,11 +97,16 @@ export async function putSaveUser(req, res) {
         res.status(404).send()
     }
 
-    const newBlocks = updateLastBlock(user.blocks, lastblock)
+    try {
+        blocks = updateLastBlock(user.blocks, lastblock)
+    } catch (err) {
+        res.status(500).send({ message: `Error updating User with pk=${publickey} : "${err}"` });
+        return
+    }
 
     try {
         await User.update(
-            { blocks: newBlocks },
+            { blocks: blocks },
             { where: { publickey: publickey } }
         )
         await removeWaitingTransactions(user.blocks[0], publickey)

@@ -4,6 +4,7 @@ import { DB, USER, PASSWORD, HOST, dialect as _dialect, port as _port, pool as _
 const env = process.env.NODE_ENV;
 let sequelize
 
+
 if (env === 'test') {
     sequelize = new Sequelize({
         dialect: 'sqlite',

@@ -14,18 +14,20 @@
   "main": "index.js",
   "scripts": {
     "server": "node server.js",
-    "test":  "NODE_ENV=test node --env-file=../.env ./node_modules/mocha/bin/mocha"
+    "test": "NODE_ENV=test node --env-file=../.env ./node_modules/mocha/bin/mocha",
+    "wintest": "SET NODE_ENV=test& node --env-file=../.env ./node_modules/mocha/bin/mocha"
   },
   "dependencies": {
-    "@sequelize/sqlite3": "^7.0.0-alpha.47",
-    "dotenv": "^17.2.3",
-    "express": "^5.1.0",
-    "organic-money": "^0.1.13",
-    "pg": "^8.16.3",
+    "@sequelize/sqlite3": "^7.0.0-alpha.48",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "organic-money": "^0.2.2",
+    "pg": "^8.21.0",
     "pg-hstore": "^2.3.4",
-    "sequelize": "^6.37.7"
+    "sequelize": "^6.37.8",
+    "supertest": "^7.2.2"
   },
   "devDependencies": {
-    "mocha": "^11.7.5"
+    "mocha": "^11.7.6"
   }
 }

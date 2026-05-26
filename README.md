@@ -50,8 +50,14 @@ docker compose up --build
 
 ### Run tests
 
+On unix
 ```bash
 npm test
+```
+
+On windows
+```bash
+npm run wintest
 ```
 
 ## For developpers

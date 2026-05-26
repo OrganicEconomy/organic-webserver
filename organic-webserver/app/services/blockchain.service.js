@@ -1,4 +1,4 @@
-import { Blockchain, CitizenBlockchain } from 'organic-money/src/index.js';
+import { Blockchain, CitizenBlockchain, BlockMaker } from 'organic-money/src/index.js';
 
 const SECRETKEY = process.env.ORGANIC_SECRET_KEY
 
@@ -8,10 +8,12 @@ export function validateBlockchain(blocks) {
         throw new Error(`Given blockchain isn't made for validation :  ${blocks}`)
     }
     blockchain.validateAccount(SECRETKEY)
-    return blockchain.blocks
+    return blockchain.export()
 }
 
 export function updateLastBlock(blocks, lastblock) {
+    lastblock = BlockMaker.make(lastblock)
+    
     const blockchain = new CitizenBlockchain(blocks)
 
     if (blockchain.lastblock.previousHash !== lastblock.previousHash) {
@@ -19,19 +21,19 @@ export function updateLastBlock(blocks, lastblock) {
     } else {
         blockchain.blocks[0] = lastblock
     }
-    return blockchain.blocks
+    return blockchain.export()
 }
 
 export function signLastBlock(blocks) {
     const blockchain = new CitizenBlockchain(blocks)
-    if (!!blockchain.lastblock.hash) { // TODO: use Blockchain.isSigned(block)
+    if (!!blockchain.lastblock.isSigned()) {
         throw new Error(`Given block is already signed.`)
     } else {
-        blockchain.sealLastBlock(SECRETKEY)
+        blockchain.closeLastBlock(SECRETKEY)
     }
-    return blockchain.blocks
+    return blockchain.export()
 }
 
 export function isValidTransaction(tx) {
-    return Blockchain.isValidTransaction(tx)
+    return tx.isValid()
 }
