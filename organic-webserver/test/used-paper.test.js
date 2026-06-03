@@ -93,6 +93,17 @@ describe('POST /cashPaper', () => {
       });
   });
 
+  it('Should not insert paper when hash is < 141 chars.', async () => {
+    const shortHash = validHash.slice(0, -1);
+    await request(app)
+      .post('/api/papers/cash')
+      .send({ hash: shortHash })
+      .expect(400);
+
+    const paper = await UsedPaper.findOne({ where: { hash: shortHash } });
+    assert.equal(paper, null);
+  });
+
   it('Should return 400 if given hash is > 141 chars.', (done) => {
     const toolonghash = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1"
     request(app)

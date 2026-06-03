@@ -12,6 +12,7 @@ export async function postCashPaper(req, res) {
 
     if (hash.length < 141 || hash.length > 141) {
         res.status(400).send({ message: "Invalid hash format." });
+        return;
     }
 
     try {
@@ -38,6 +39,7 @@ export async function getIsCashed(req, res) {
 
     if (hash.length < 141 || hash.length > 141) {
         res.status(400).send({ message: "Invalid hash format." });
+        return;
     }
 
     const alreadyUsedPaper = await UsedPaper.findOne({
