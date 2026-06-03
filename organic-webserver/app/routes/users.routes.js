@@ -1,4 +1,4 @@
-import { postRegister, putSaveUser, putSignAndSaveUser, getLoginUser } from "../controllers/user.controller.js";
+import { postRegister, putSaveUser, putSignAndSaveUser, postLoginUser } from "../controllers/user.controller.js";
 import express from "express";
 
 export default app => {
@@ -10,7 +10,7 @@ export default app => {
 
     router.put("/sign", putSignAndSaveUser);
 
-    router.get("/login", getLoginUser)
+    router.post("/login", postLoginUser)
 
     app.use('/api/users', router);
 };

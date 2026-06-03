@@ -3,7 +3,7 @@ export const USER = process.env.DB_USER;
 export const PASSWORD = process.env.DB_PASSWORD;
 export const DB = process.env.DB_NAME;
 export const port = process.env.DB_PORT;
-export const dialect = "postgres";
+export const dialect = process.env.DB_DIALECT;
 export const pool = {
     max: 5,
     min: 0,

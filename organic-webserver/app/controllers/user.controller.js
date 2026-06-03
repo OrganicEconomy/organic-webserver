@@ -1,20 +1,22 @@
 import { User, WaitingTx } from "../models.js"
 import { Op } from 'sequelize'
+import bcrypt from 'bcryptjs'
 
 import { validateBlockchain, updateLastBlock, signLastBlock } from '../services/blockchain.service.js'
 
-export async function getLoginUser(req, res) {
-    if (!req.query || !req.query.mail || !req.query.password) {
+export async function postLoginUser(req, res) {
+    if (!req.body || !req.body.mail || !req.body.password) {
         res.status(400).send({ message: "Fields 'mail' and 'password' are needed" });
         return;
     }
 
-    const mail = req.query.mail;
-    const password = req.query.password;
+    const mail = req.body.mail;
+    const password = req.body.password;
 
-    const user = await User.findOne({ where: { mail: mail, password: password } });
+    const user = await User.findOne({ where: { mail: mail } });
+    const isPasswordValid = user !== null && await bcrypt.compare(password, user.password);
 
-    if (user === null) {
+    if (!isPasswordValid) {
         res.status(404).send({ message: "User not found or invalid password" });
         return
     }
@@ -35,7 +37,7 @@ export async function postRegister(req, res) {
         publickey: req.body.publickey,
         name: req.body.name,
         mail: req.body.mail,
-        password: req.body.password,
+        password: await bcrypt.hash(req.body.password, 10),
         secretkey: req.body.secretkey,
         blocks: req.body.blocks
     };

@@ -1,44 +1,45 @@
 import request from 'supertest';
 import app from "../app.js";
 import assert from "assert";
+import bcrypt from 'bcryptjs';
 import { User } from "../app/models.js";
 import { Blockchain, CitizenBlockchain } from 'organic-money/src/index.js';
 import { dateToInt } from 'organic-money/src/crypto.js';
 
 const SECRETKEY = process.env.ORGANIC_SECRET_KEY
 
-describe('GET /users/login', () => {
+describe('POST /users/login', () => {
     it('Should return json format.', (done) => {
         request(app)
-            .get('/api/users/login')
+            .post('/api/users/login')
             .set('Accept', 'application/json')
             .expect('Content-Type', /json/, done)
     });
 
     it('Should return 404 for unknown user', (done) => {
         request(app)
-            .get('/api/users/login?mail=toto@toto.toto&password=didadou')
+            .post('/api/users/login')
             .set('Accept', 'application/json')
+            .send({ mail: 'toto@toto.toto', password: 'didadou' })
             .expect(404, done)
     });
 
-    it('Should return 200 and user for known user', (done) => {
+    it('Should return 200 and user for known user', async () => {
         const mail = "test3@test3.com"
         const password = "test3"
-        User.create({
+        await User.create({
             mail: mail,
-            password: password,
+            password: await bcrypt.hash(password, 10),
             publickey: "",
             name: "test3",
             secretkey: "",
             blocks: []
-        })
-            .then(() => {
-                request(app)
-                    .get('/api/users/login?mail=' + mail + '&password=' + password)
-                    .set('Accept', 'application/json')
-                    .expect(200, done)
-            });
+        });
+        await request(app)
+            .post('/api/users/login')
+            .set('Accept', 'application/json')
+            .send({ mail, password })
+            .expect(200);
     });
 });
 

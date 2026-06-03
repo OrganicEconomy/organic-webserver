@@ -24,7 +24,7 @@ And save them in `organic-webserver/organic-webserver/keys/`.
 
 ### Installation
 
-```javascript
+```bash
 npm install
 ```
 
@@ -32,8 +32,14 @@ npm install
 
 Locally
 
-```javascript
-node server.js
+```bash
+npm run server
+```
+
+Or with windows:
+
+```bash
+npm run winserver
 ```
 
 With docker (which will include a Postgres database)
@@ -121,7 +127,7 @@ To sign and also save the given block from pk's associated blockchain.
 
 Return 200 OK + the signed block
 
-#### GET /users/login
+#### POST /users/login
 
 To login from a new device
 
@@ -215,7 +221,7 @@ curl -i -X PUT -H 'Content-Type: application/json' --insecure -d '{"publickey":"
 Recuperation of user (to check)
 
 ```bash
-curl --get --insecure -d "email=gus@@gus.gus" -d "password=my%20password" https://127.0.0.1:6868/api/users/login
+curl -i -X POST -H 'Content-Type: application/json' --insecure -d '{"mail": "gus@@gus.gus", "password": "my password"}' https://127.0.0.1:6868/api/users/login
 ```
 
 #### Send transaction

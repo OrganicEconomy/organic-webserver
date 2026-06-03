@@ -13,12 +13,15 @@
   "type": "module",
   "main": "index.js",
   "scripts": {
-    "server": "node server.js",
-    "test": "NODE_ENV=test node --env-file=../.env ./node_modules/mocha/bin/mocha",
-    "wintest": "SET NODE_ENV=test& node --env-file=../.env ./node_modules/mocha/bin/mocha"
+    "server": "NODE_ENV=dev node --env-file=../.env.dev server.js",
+    "winserver": "SET NODE_ENV=dev& node --env-file=../.env.dev server.js",
+    "test": "NODE_ENV=test node --env-file=../.env.test ./node_modules/mocha/bin/mocha",
+    "wintest": "SET NODE_ENV=test& node --env-file=../.env.test ./node_modules/mocha/bin/mocha"
   },
   "dependencies": {
     "@sequelize/sqlite3": "^7.0.0-alpha.48",
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "organic-money": "^0.2.2",

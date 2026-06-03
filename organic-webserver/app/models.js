@@ -5,10 +5,10 @@ const env = process.env.NODE_ENV;
 let sequelize
 
 
-if (env === 'test') {
+if (env === 'test' || env === 'dev') {
     sequelize = new Sequelize({
-        dialect: 'sqlite',
-        storage: '', // temp storage
+        dialect: _dialect,
+        storage: DB,
         logging: false
     });
 } else {
