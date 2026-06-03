@@ -20,7 +20,8 @@ export async function postLoginUser(req, res) {
         res.status(404).send({ message: "User not found or invalid password" });
         return
     }
-    res.send(user)
+    const { publickey, name, mail: userMail, secretkey, blocks } = user;
+    res.send({ publickey, name, mail: userMail, secretkey, blocks })
 }
 
 export async function postRegister(req, res) {
