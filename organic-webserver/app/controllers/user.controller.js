@@ -23,9 +23,6 @@ export async function postLoginUser(req, res) {
     res.send(user)
 }
 
-/**
- * TODO: hash the password before save
- */
 export async function postRegister(req, res) {
     if (!req.body || !req.body.publickey || !req.body.name || !req.body.mail
         || !req.body.password || !req.body.secretkey || !req.body.blocks) {
@@ -97,6 +94,7 @@ export async function putSaveUser(req, res) {
 
     if (!user) {
         res.status(404).send()
+        return
     }
 
     try {
@@ -131,6 +129,7 @@ export async function putSignAndSaveUser(req, res) {
 
     if (!user) {
         res.status(404).send()
+        return
     }
 
     let newBlocks = updateLastBlock(user.blocks, lastblock)

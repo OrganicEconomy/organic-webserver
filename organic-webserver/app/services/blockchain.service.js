@@ -1,4 +1,4 @@
-import { Blockchain, CitizenBlockchain, BlockMaker } from 'organic-money/src/index.js';
+import { Blockchain, CitizenBlockchain, BlockMaker, TransactionMaker } from 'organic-money/src/index.js';
 
 const SECRETKEY = process.env.ORGANIC_SECRET_KEY
 
@@ -35,5 +35,9 @@ export function signLastBlock(blocks) {
 }
 
 export function isValidTransaction(tx) {
-    return tx.isValid()
+    try {
+        return TransactionMaker.make(tx).isValid()
+    } catch {
+        return false
+    }
 }
