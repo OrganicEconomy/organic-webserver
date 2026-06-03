@@ -62,7 +62,7 @@ export async function postRegister(req, res) {
 
 async function removeWaitingTransactions(lastblock, targetpk) {
     if (!lastblock.x) { return }
-    const hashList = lastblock.x.filter(tx => tx.t === targetpk).map(tx => tx.h)
+    const hashList = lastblock.x.filter(tx => tx.p === targetpk).map(tx => tx.h)
 
     if (hashList.length === 0) {
         return
@@ -110,7 +110,7 @@ export async function putSaveUser(req, res) {
             { blocks: blocks },
             { where: { publickey: publickey } }
         )
-        await removeWaitingTransactions(user.blocks[0], publickey)
+        await removeWaitingTransactions(blocks[0], publickey)
         res.send({ message: "User was updated successfully." });
     } catch (err) {
         res.status(500).send({ message: `Error updating User with pk=${publickey} : "${err}"` });

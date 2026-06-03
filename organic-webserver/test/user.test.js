@@ -2,7 +2,7 @@ import request from 'supertest';
 import app from "../app.js";
 import assert from "assert";
 import bcrypt from 'bcryptjs';
-import { User } from "../app/models.js";
+import { User, WaitingTx } from "../app/models.js";
 import { Blockchain, CitizenBlockchain } from 'organic-money/src/index.js';
 import { dateToInt } from 'organic-money/src/crypto.js';
 
@@ -154,6 +154,42 @@ describe('PUT /users/save', () => {
         const user = await User.findOne({ where: { publickey: pk } });
         assert.deepEqual(user.blocks[0], expected)
         assert.equal(user.blocks.length, 3)
+    });
+
+    it('Should remove WaitingTx included in the saved block.', async () => {
+        const bc = new CitizenBlockchain()
+        const sk = bc.startBlockchain("testName", new Date(), SECRETKEY)
+        const pk = bc.getMyPublicKey()
+
+        const bc2 = new CitizenBlockchain()
+        const sk2 = bc2.startBlockchain("Payer", new Date(), SECRETKEY)
+        const transaction = bc2.pay(sk2, pk, 1)
+
+        await User.create({
+            mail: "test@test.test",
+            password: "test",
+            publickey: pk,
+            name: "test",
+            secretkey: sk,
+            blocks: bc.export()
+        })
+
+        const txExported = transaction.export()
+        await WaitingTx.create({
+            hash: txExported.h,
+            target: pk,
+            tx: txExported
+        })
+
+        bc.addTransaction(transaction)
+
+        await request(app)
+            .put('/api/users/save')
+            .send({ publickey: pk, block: bc.lastblock.export() })
+            .expect(200)
+
+        const waiting = await WaitingTx.findOne({ where: { hash: txExported.h } })
+        assert.equal(waiting, null)
     });
 
     it('Should return 200 and update given new block if not new.', async () => {
