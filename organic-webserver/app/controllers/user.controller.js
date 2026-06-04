@@ -133,8 +133,14 @@ export async function putSignAndSaveUser(req, res) {
         return
     }
 
-    let newBlocks = updateLastBlock(user.blocks, lastblock)
-    newBlocks = signLastBlock(newBlocks)
+    let newBlocks
+    try {
+        newBlocks = updateLastBlock(user.blocks, lastblock)
+        newBlocks = signLastBlock(newBlocks)
+    } catch (err) {
+        res.status(500).send({ message: `Error signing block for user pk=${publickey} : "${err}"` })
+        return
+    }
 
     try {
         await User.update(

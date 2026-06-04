@@ -260,6 +260,31 @@ describe('PUT /users/sign', () => {
             .expect(404)
     });
 
+    it('Should return 500 as JSON when block is already signed.', async () => {
+        const bc = new CitizenBlockchain()
+        const sk = bc.startBlockchain("testName", new Date(), SECRETKEY)
+        const pk = bc.getMyPublicKey()
+
+        await User.create({
+            mail: "test@test.test",
+            password: "test",
+            publickey: pk,
+            name: "test",
+            secretkey: sk,
+            blocks: bc.export()
+        })
+
+        // blocks[0] after startBlockchain is the InitializationBlock, already signed by SECRETKEY
+        const signedBlock = bc.export()[0]
+        await request(app)
+            .put('/api/users/sign')
+            .set('Accept', 'application/json')
+            .set('x-signature', signBlock(signedBlock, sk))
+            .send({ publickey: pk, block: signedBlock })
+            .expect(500)
+            .expect('Content-Type', /json/)
+    });
+
     it('Should return 200, update and sign given new block if not new.', async () => {
         const bc = new CitizenBlockchain()
         const sk = bc.startBlockchain("testName", new Date(), SECRETKEY)
