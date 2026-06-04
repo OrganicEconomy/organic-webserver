@@ -1,4 +1,4 @@
-import { WaitingTx } from "../models.js";
+import { WaitingTx, User } from "../models.js";
 import { isValidTransaction } from "../services/blockchain.service.js"
 
 export async function createWaitingTx(req, res) {
@@ -8,6 +8,12 @@ export async function createWaitingTx(req, res) {
     }
     if (!isValidTransaction(req.body.tx)) {
         res.status(400).send({ message: "Invalid transaction !" });
+        return;
+    }
+
+    const sender = await User.findOne({ where: { publickey: req.body.tx.s } });
+    if (!sender) {
+        res.status(403).send({ message: "Sender is not a registered user." });
         return;
     }
 

@@ -1,7 +1,7 @@
 import request from 'supertest';
 import app from "../app.js";
 import assert from "assert";
-import { WaitingTx } from "../app/models.js";
+import { WaitingTx, User } from "../app/models.js";
 import { CitizenBlockchain } from 'organic-money/src/index.js';
 
 const SECRETKEY = process.env.ORGANIC_SECRET_KEY
@@ -30,9 +30,35 @@ describe('POST /tx/send', () => {
             .expect(400, done)
     });
 
+    it('Should return 403 if sender is not a registered user.', async () => {
+        const bc = new CitizenBlockchain()
+        const sk = bc.startBlockchain("Unknown", new Date(), SECRETKEY)
+
+        const bc2 = new CitizenBlockchain()
+        bc2.startBlockchain("Receiver", new Date(), SECRETKEY)
+        const pk2 = bc2.getMyPublicKey()
+
+        const transaction = bc.pay(sk, pk2, 1)
+        await request(app)
+            .post('/api/tx/send')
+            .set('Accept', 'application/json')
+            .send({ tx: transaction.export() })
+            .expect(403)
+    });
+
     it('Should save hash and target correctly in database.', async () => {
         const bc = new CitizenBlockchain()
         const sk = bc.startBlockchain("Payer", new Date(), SECRETKEY)
+        const pk = bc.getMyPublicKey()
+
+        await User.create({
+            mail: "payer@test.test",
+            password: "test",
+            publickey: pk,
+            name: "Payer",
+            secretkey: sk,
+            blocks: bc.export()
+        })
 
         const bc2 = new CitizenBlockchain()
         bc2.startBlockchain("Receiver", new Date(), SECRETKEY)
