@@ -1,3 +1,4 @@
 organic-webserver/keys
 organic-webserver/node_modules
+organic-webserver/dev.sqlite
 .env
