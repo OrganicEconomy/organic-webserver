@@ -3,8 +3,17 @@ import app from "../app.js";
 import assert from "assert";
 import bcrypt from 'bcryptjs';
 import { User, WaitingTx } from "../app/models.js";
-import { Blockchain, CitizenBlockchain } from 'organic-money/src/index.js';
+import { Blockchain, CitizenBlockchain, BlockMaker, signHash } from 'organic-money/src/index.js';
 import { dateToInt } from 'organic-money/src/crypto.js';
+
+const TEST_SK = "ed945716dddb7af2c9774939e9946f1fee31f5ec0a3c6ec96059f119c396912f"
+const TEST_PK = "02c85e4e448d67a8dc724c620f3fe7d2a3a3cce9fe905b918f712396b4f8effcb3"
+
+function signBlock(blockObj, sk) {
+    const block = BlockMaker.make(blockObj)
+    block.merkle()
+    return signHash(block.hash(), sk)
+}
 
 const SECRETKEY = process.env.ORGANIC_SECRET_KEY
 
@@ -103,15 +112,16 @@ describe('PUT /users/save', () => {
             .expect('Content-Type', /json/, done)
     });
 
-    it('Should return 404 for unknown user', (done) => {
-        request(app)
+    it('Should return 404 for unknown user', async () => {
+        const block = BlockMaker.make({ v: 1, d: 20260101, p: "abc", s: TEST_PK, r: "", m: [], i: [], t: 0, h: "", x: [] })
+        block.merkle()
+        const sig = signHash(block.hash(), TEST_SK)
+        await request(app)
             .put('/api/users/save')
             .set('Accept', 'application/json')
-            .send({
-                publickey: "1206ffd8f4fe843f5f7183179dcf36f550326813f56ec824911abca9c9d1cd7834",
-                block: []
-            })
-            .expect(404, done)
+            .set('x-signature', sig)
+            .send({ publickey: TEST_PK, block: block.export() })
+            .expect(404)
     });
 
     
@@ -145,10 +155,8 @@ describe('PUT /users/save', () => {
         const response = await request(app)
             .put('/api/users/save')
             .set('Accept', 'application/json')
-            .send({
-                publickey: pk,
-                block: expected
-            })
+            .set('x-signature', signBlock(expected, sk))
+            .send({ publickey: pk, block: expected })
             .expect(200)
 
         const user = await User.findOne({ where: { publickey: pk } });
@@ -183,9 +191,11 @@ describe('PUT /users/save', () => {
 
         bc.addTransaction(transaction)
 
+        const lastblock = bc.lastblock.export()
         await request(app)
             .put('/api/users/save')
-            .send({ publickey: pk, block: bc.lastblock.export() })
+            .set('x-signature', signBlock(lastblock, sk))
+            .send({ publickey: pk, block: lastblock })
             .expect(200)
 
         const waiting = await WaitingTx.findOne({ where: { hash: txExported.h } })
@@ -215,13 +225,12 @@ describe('PUT /users/save', () => {
 
         assert.equal(bc.blocks.length, 3)
 
+        const lastblock = bc.lastblock.export()
         const response = await request(app)
             .put('/api/users/save')
             .set('Accept', 'application/json')
-            .send({
-                publickey: pk,
-                block: bc.lastblock.export()
-            })
+            .set('x-signature', signBlock(lastblock, sk))
+            .send({ publickey: pk, block: lastblock })
             .expect(200)
 
         const user = await User.findOne({ where: { publickey: pk } });
@@ -239,15 +248,16 @@ describe('PUT /users/sign', () => {
             .expect('Content-Type', /json/, done)
     });
 
-    it('Should return 404 for unknown user', (done) => {
-        request(app)
+    it('Should return 404 for unknown user', async () => {
+        const block = BlockMaker.make({ v: 1, d: 20260101, p: "abc", s: TEST_PK, r: "", m: [], i: [], t: 0, h: "", x: [] })
+        block.merkle()
+        const sig = signHash(block.hash(), TEST_SK)
+        await request(app)
             .put('/api/users/sign')
             .set('Accept', 'application/json')
-            .send({
-                publickey: "1206ffd8f4fe843f5f7183179dcf36f550326813f56ec824911abca9c9d1cd7834",
-                block: []
-            })
-            .expect(404, done)
+            .set('x-signature', sig)
+            .send({ publickey: TEST_PK, block: block.export() })
+            .expect(404)
     });
 
     it('Should return 200, update and sign given new block if not new.', async () => {
@@ -273,13 +283,12 @@ describe('PUT /users/sign', () => {
 
         assert.equal(bc.blocks.length, 3)
 
+        const blockToSign = bc.export()[0]
         const response = await request(app)
             .put('/api/users/sign')
             .set('Accept', 'application/json')
-            .send({
-                publickey: pk,
-                block: bc.export()[0]
-            })
+            .set('x-signature', signBlock(blockToSign, sk))
+            .send({ publickey: pk, block: blockToSign })
             .expect(200)
 
         const user = await User.findOne({ where: { publickey: pk } });

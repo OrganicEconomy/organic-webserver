@@ -2,7 +2,7 @@ import { WaitingTx } from "../models.js";
 import { isValidTransaction } from "../services/blockchain.service.js"
 
 export async function createWaitingTx(req, res) {
-    if (!req.body.tx) {
+    if (!req.body?.tx) {
         res.status(400).send({ message: "Content cannot be empty!" });
         return;
     }
@@ -12,8 +12,8 @@ export async function createWaitingTx(req, res) {
     }
 
     const waitingtx = {
-        hash: req.body.tx.hash,
-        target: req.body.tx.target,
+        hash: req.body.tx.h,
+        target: req.body.tx.p,
         tx: req.body.tx
     };
 

@@ -1,4 +1,5 @@
 import { createWaitingTx, listWaitingTx } from "../controllers/waiting-tx.controller.js";
+import { requireTimestampAuth } from "../middleware/auth.middleware.js";
 import express from "express";
 
 export default app => {
@@ -6,7 +7,7 @@ export default app => {
 
     router.post("/send", createWaitingTx);
 
-    router.get("/list", listWaitingTx);
+    router.get("/list", requireTimestampAuth, listWaitingTx);
 
     app.use('/api/tx', router);
 };

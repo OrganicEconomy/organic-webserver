@@ -1,4 +1,5 @@
 import { postRegister, putSaveUser, putSignAndSaveUser, postLoginUser } from "../controllers/user.controller.js";
+import { requireBlockAuth } from "../middleware/auth.middleware.js";
 import express from "express";
 
 export default app => {
@@ -6,9 +7,9 @@ export default app => {
 
     router.post("/register", postRegister);
 
-    router.put("/save", putSaveUser);
+    router.put("/save", requireBlockAuth, putSaveUser);
 
-    router.put("/sign", putSignAndSaveUser);
+    router.put("/sign", requireBlockAuth, putSignAndSaveUser);
 
     router.post("/login", postLoginUser)
 
