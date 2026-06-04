@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import 'dotenv/config';
+import rateLimit from 'express-rate-limit';
 import { sequelize } from "./app/models.js";
 import papersroutes from "./app/routes/used-papers.routes.js";
 import usersroute from "./app/routes/users.routes.js";
@@ -18,18 +19,28 @@ const corsOptions = {
     optionsSuccessStatus: 200
 };
 
+const isTest = process.env.NODE_ENV === 'test'
+
+const apiLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 8,
+    skip: () => isTest,
+    standardHeaders: true,
+    legacyHeaders: false,
+})
+
+const loginLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 10,
+    skip: () => isTest,
+    standardHeaders: true,
+    legacyHeaders: false,
+})
+
 const app = express();
 
-app.use(express.json()); 
+app.use(express.json());
 app.use(cors(corsOptions))
-
-/**
-app.use((req, res, next) => {
-    res.header("Access-Control-Allow-Origin", '*');
-    res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-    res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
-    next();
-});*/
 
 try {
     await sequelize.sync()
@@ -37,6 +48,9 @@ try {
 } catch (err) {
     console.log("Failed to sync db: " + err.message);
 }
+
+app.use('/api/users/login', loginLimiter)
+app.use('/api', apiLimiter)
 
 papersroutes(app);
 usersroute(app);
