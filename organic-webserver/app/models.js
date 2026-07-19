@@ -1,31 +1,5 @@
 import Sequelize from "sequelize";
-import { DB, USER, PASSWORD, HOST, dialect as _dialect, port as _port, pool as _pool } from "./config/db.config.js";
-
-const env = process.env.NODE_ENV;
-let sequelize
-
-
-if (env === 'test' || env === 'dev') {
-    sequelize = new Sequelize({
-        dialect: _dialect,
-        storage: DB,
-        logging: false
-    });
-} else {
-    sequelize = new Sequelize(DB, USER, PASSWORD, {
-        host: HOST,
-        dialect: _dialect,
-        port: _port,
-        operatorsAliases: 0,
-
-        pool: {
-            max: _pool.max,
-            min: _pool.min,
-            acquire: _pool.acquire,
-            idle: _pool.idle
-        }
-    });
-}
+import { sequelize } from "./config/db.config.js";
 
 const User = sequelize.define("user", {
     publickey: {

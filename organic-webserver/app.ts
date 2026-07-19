@@ -1,11 +1,11 @@
 import express from 'express';
 import cors from 'cors';
-import 'dotenv/config';
 import rateLimit from 'express-rate-limit';
 import { sequelize } from "./app/models.js";
-import papersroutes from "./app/routes/used-papers.routes.js";
-import usersroute from "./app/routes/users.routes.js";
-import txroutes from "./app/routes/waiting-tx.routes.js";
+import papersRouter from "./app/routes/used-papers.routes.js";
+import usersRouter from "./app/routes/users.routes.js";
+import txRouter from "./app/routes/waiting-tx.routes.js";
+import infoRouter from "./app/routes/info.routes.js";
 
 if (!process.env.ORGANIC_SECRET_KEY) {
     throw new Error('Missing ORGANIC_SECRET_KEY environment variable');
@@ -46,14 +46,22 @@ try {
     await sequelize.sync()
     console.log("Synced db.");
 } catch (err) {
-    console.log("Failed to sync db: " + err.message);
+    console.log("Failed to sync db: " + (err as Error).message);
 }
 
-app.use('/api/users/login', loginLimiter)
+// The '/api' prefix also rate-limits '/api/v1/*'.
+app.use(['/api/v1/users/login', '/api/users/login'], loginLimiter)
 app.use('/api', apiLimiter)
 
-papersroutes(app);
-usersroute(app);
-txroutes(app);
+// One API, two mounts: /api/v1 is the standard (PROTOCOL.md §5); the bare
+// /api alias keeps legacy clients alive during Phase 1 and dies with it.
+const api = express.Router()
+api.use(infoRouter)
+api.use('/users', usersRouter)
+api.use('/tx', txRouter)
+api.use('/papers', papersRouter)
+
+app.use('/api/v1', api)
+app.use('/api', api)
 
 export default app;
