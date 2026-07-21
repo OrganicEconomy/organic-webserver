@@ -94,7 +94,7 @@ describe('POST /cashPaper', () => {
     it('Should return 400 INVALID_TX for a transaction with invalid crypto.', async () => {
         const paper = makePaper()
         const tampered = paper.export()
-        tampered.m = [...tampered.m, 99999999999] // mutate after signing: signature no longer matches
+        tampered.d = tampered.d + 1 // mutate after signing: signature no longer matches
 
         const res = await request(app)
             .post('/api/papers/cash')
