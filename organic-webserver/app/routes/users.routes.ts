@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { postRegister, putSaveUser, putSignAndSaveUser, postLoginUser } from "../controllers/user.controller.js";
-import { requireBlockAuth } from "../middleware/auth.middleware.js";
+import { postRegister, putSaveUser, putSignAndSaveUser, postLoginUser, postChangePassword } from "../controllers/user.controller.js";
+import { requireBlockAuth, requireTimestampAuth } from "../middleware/auth.middleware.js";
 
 const router = Router();
 
@@ -11,5 +11,7 @@ router.put("/save", requireBlockAuth, putSaveUser);
 router.put("/sign", requireBlockAuth, putSignAndSaveUser);
 
 router.post("/login", postLoginUser);
+
+router.post("/password", requireTimestampAuth, postChangePassword);
 
 export default router;
