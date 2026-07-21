@@ -26,6 +26,25 @@ const User = sequelize.define("user", {
     blocks: {
         type: Sequelize.JSON,
         allowNull: false
+    },
+    /** ISO date of birth ("1990-03-15"), as declared at register. */
+    birthdate: {
+        type: Sequelize.DATEONLY,
+        allowNull: true
+    },
+    /** Public key of the referent that validated this account (this server's, in Phase 1's open genesis). */
+    validatorpk: {
+        type: Sequelize.STRING(70),
+        allowNull: true
+    },
+    /**
+     * Opaque token identifying the currently active device (crypto.randomUUID()).
+     * Issued at register/login; rotated on every login, revoking the previous one.
+     * Not cryptographic — identity is still proven by x-signature (PROTOCOL.md §5.4).
+     */
+    devicetoken: {
+        type: Sequelize.STRING,
+        allowNull: true
     }
 });
 
