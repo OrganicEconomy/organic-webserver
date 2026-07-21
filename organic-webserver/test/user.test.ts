@@ -186,7 +186,7 @@ describe('PUT /users/save', () => {
     });
 
     it('Should return 404 for unknown user', async () => {
-        const block = BlockMaker.make({ v: 1, d: 20260101, p: "abc", s: TEST_PK, r: "", m: [], i: [], t: 0, h: "", x: [] })
+        const block = BlockMaker.make({ v: 1, d: 20260101, p: "abc", s: TEST_PK, r: "", m: "", i: "", t: 0, h: "", x: [] })
         block.merkle()
         const sig = signHash(block.hash(), TEST_SK)
         await request(app)
@@ -218,8 +218,8 @@ describe('PUT /users/save', () => {
             p: "aaa",
             s: 'bbb',
             r: "root",
-            m: [],
-            i: [],
+            m: "",
+            i: "",
             t: 2000,
             h: "toto",
             x: []
@@ -252,7 +252,7 @@ describe('PUT /users/save', () => {
             devicetoken: "the-active-device"
         })
 
-        const expected = { v: 0, d: "20121212", p: "aaa", s: 'bbb', r: "root", m: [], i: [], t: 2000, h: "toto", x: [] }
+        const expected = { v: 0, d: "20121212", p: "aaa", s: 'bbb', r: "root", m: "", i: "", t: 2000, h: "toto", x: [] }
 
         const res = await request(app)
             .put('/api/users/save')
@@ -354,7 +354,7 @@ describe('PUT /users/sign', () => {
     });
 
     it('Should return 404 for unknown user', async () => {
-        const block = BlockMaker.make({ v: 1, d: 20260101, p: "abc", s: TEST_PK, r: "", m: [], i: [], t: 0, h: "", x: [] })
+        const block = BlockMaker.make({ v: 1, d: 20260101, p: "abc", s: TEST_PK, r: "", m: "", i: "", t: 0, h: "", x: [] })
         block.merkle()
         const sig = signHash(block.hash(), TEST_SK)
         await request(app)

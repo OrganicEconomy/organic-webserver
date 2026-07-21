@@ -47,7 +47,7 @@ describe('POST /tx/send', () => {
         const res = await request(app)
             .post('/api/tx/send')
             .set('Accept', 'application/json')
-            .send({ tx: { v: 1, d: 0, s: "fake", p: "fake", m: [], i: [], t: 0, h: "badsig", x: [] } })
+            .send({ tx: { v: 1, d: 0, s: "fake", p: "fake", m: "", i: "", t: 0, h: "badsig", x: [] } })
             .expect(400)
         assert.equal(res.body.code, 'INVALID_TX')
     });
@@ -151,7 +151,7 @@ describe('POST /tx/verify', () => {
     it('Should return status invalid for a malformed transaction.', async () => {
         const res = await request(app)
             .post('/api/tx/verify')
-            .send({ tx: { v: 1, d: 0, s: "fake", p: "fake", m: [], i: [], t: 0, h: "badsig", x: [] } })
+            .send({ tx: { v: 1, d: 0, s: "fake", p: "fake", m: "", i: "", t: 0, h: "badsig", x: [] } })
             .expect(200)
         assert.equal(res.body.status, 'invalid')
     });
