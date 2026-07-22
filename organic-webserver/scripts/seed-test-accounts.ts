@@ -1,7 +1,9 @@
 /**
- * Dev-only tool: creates N fully-formed test accounts directly in the
- * database, each with D days of simulated activity (daily money creation +
- * occasional self-pay) genuinely dated in the past.
+ * Dev-only tool: creates one fully-formed test account directly in the
+ * database, with D days of simulated activity (daily money creation +
+ * occasional self-pay) genuinely dated in the past. Call it once per
+ * account you want (mail is derived from the name + a timestamp, so
+ * repeated calls with the same name don't collide).
  *
  * Why not just call the real /register + /save endpoints in a loop instead?
  * Because a normal registration is anchored by the InitializationBlock the
@@ -14,31 +16,31 @@
  * past, then insert the result with the same Sequelize model the server uses.
  *
  * Usage (from this package's root):
- *   npm run seed -- --accounts=5 --days=30
- *   npm run winseed -- --accounts=5 --days=30
+ *   npm run seed -- --name=Jonnhy --days=30
+ *   npm run winseed -- --name=Jonnhy --days=30
  */
 import { CitizenBlockchain } from 'organic-money/src/index.js'
-import { randomPrivateKey, publicFromPrivate, aesEncrypt } from 'organic-money/src/crypto.js'
+import { publicFromPrivate, aesEncrypt } from 'organic-money/src/crypto.js'
 import bcrypt from 'bcryptjs'
 import { User, sequelize } from '../app/models.js'
 
-const PASSWORD = 'aaa'
+const PASSWORD = 'a'
 const SERVER_SECRET_KEY = process.env.ORGANIC_SECRET_KEY as string
 if (!SERVER_SECRET_KEY) {
   throw new Error('Missing ORGANIC_SECRET_KEY environment variable')
 }
 
-function parseArgs(): { accounts: number; days: number } {
+function parseArgs(): { name: string; days: number } {
   const opts: Record<string, string> = {}
   for (const arg of process.argv.slice(2)) {
     const m = /^--([\w-]+)=(.*)$/.exec(arg)
     if (m) opts[m[1]] = m[2]
   }
-  const accounts = Number(opts['accounts'] ?? 3)
+  const name = opts['name']
   const days = Number(opts['days'] ?? 30)
-  if (!Number.isInteger(accounts) || accounts < 1) throw new Error('--accounts must be a positive integer')
+  if (!name) throw new Error('--name is required, e.g. --name=Jonnhy')
   if (!Number.isInteger(days) || days < 1) throw new Error('--days must be a positive integer')
-  return { accounts, days }
+  return { name, days }
 }
 
 function toHex(bytes: Uint8Array): string {
@@ -80,11 +82,13 @@ function todayUTC(): Date {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
 }
 
-async function seedOneAccount(index: number, days: number, runId: number): Promise<void> {
+async function main(): Promise<void> {
+  const { name, days } = parseArgs()
   const startDate = addDays(todayUTC(), -days)
   const birthdate = new Date(Date.UTC(1990, 0, 1))
-  const name = `Test ${index}`
-  const mail = `seed-${runId}-${index}@example.test`
+  const mail = `seed-${name.toLowerCase()}-${Date.now()}@example.test`
+
+  await sequelize.sync()
 
   const citizen = new CitizenBlockchain()
   const citizenSk: string = citizen.startBlockchain(name, birthdate, SERVER_SECRET_KEY, null, startDate)
@@ -119,24 +123,11 @@ async function seedOneAccount(index: number, days: number, runId: number): Promi
     devicetoken: null,
   })
 
-  console.log(
-    `✓ ${name}  niveau ${citizen.getLevel()}  solde ${citizen.getAvailableMoneyAmount()}  ` +
-    `mail=${mail}  mdp=${PASSWORD}  pk=${publickey}`
-  )
-}
+  console.log(`✓ ${name}  niveau ${citizen.getLevel()}  solde ${citizen.getAvailableMoneyAmount()}`)
+  console.log(`\nConnecte-toi dans la webapp via "Restaurer mon compte" avec :`)
+  console.log(`  mail : ${mail}`)
+  console.log(`  mot de passe : ${PASSWORD}`)
 
-async function main(): Promise<void> {
-  const { accounts, days } = parseArgs()
-  const runId = Date.now()
-
-  await sequelize.sync()
-
-  console.log(`Création de ${accounts} compte(s) avec ${days} jour(s) d'historique chacun...\n`)
-  for (let i = 1; i <= accounts; i++) {
-    await seedOneAccount(i, days, runId)
-  }
-
-  console.log(`\nTerminé. Connecte-toi dans la webapp via "Restaurer mon compte" avec l'un des mails ci-dessus et le mot de passe "${PASSWORD}".`)
   await sequelize.close()
 }
 
