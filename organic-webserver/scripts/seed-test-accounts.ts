@@ -2,8 +2,9 @@
  * Dev-only tool: creates one fully-formed test account directly in the
  * database, with D days of simulated activity (daily money creation +
  * occasional self-pay) genuinely dated in the past. Call it once per
- * account you want (mail is derived from the name + a timestamp, so
- * repeated calls with the same name don't collide).
+ * account you want. Mail is `<name>@mail.com` — simple and memorable, but
+ * not unique: running it twice with the same --name produces two accounts
+ * sharing one mail, and login/restore will only ever find one of them.
  *
  * Why not just call the real /register + /save endpoints in a loop instead?
  * Because a normal registration is anchored by the InitializationBlock the
@@ -86,7 +87,7 @@ async function main(): Promise<void> {
   const { name, days } = parseArgs()
   const startDate = addDays(todayUTC(), -days)
   const birthdate = new Date(Date.UTC(1990, 0, 1))
-  const mail = `seed-${name.toLowerCase()}-${Date.now()}@example.test`
+  const mail = `${name.toLowerCase()}@mail.com`
 
   await sequelize.sync()
 
