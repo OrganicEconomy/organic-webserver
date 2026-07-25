@@ -14,8 +14,10 @@
   "main": "index.js",
   "scripts": {
     "start": "node --import tsx server.ts",
-    "server": "NODE_ENV=dev node --env-file=../.env.dev --import tsx server.ts",
-    "winserver": "SET NODE_ENV=dev& node --env-file=../.env.dev --import tsx server.ts",
+    "server": "NODE_ENV=dev node --env-file=../.env.dev --env-file-if-exists=../.env.local --import tsx server.ts",
+    "winserver": "SET NODE_ENV=dev& node --env-file=../.env.dev --env-file-if-exists=../.env.local --import tsx server.ts",
+    "server:https": "NODE_ENV=dev SSL_CERT_PATH=./keys/dev-https.cert SSL_KEY_PATH=./keys/dev-https.key node --env-file=../.env.dev --env-file-if-exists=../.env.local --import tsx server.ts",
+    "winserver:https": "SET NODE_ENV=dev& SET SSL_CERT_PATH=./keys/dev-https.cert& SET SSL_KEY_PATH=./keys/dev-https.key& node --env-file=../.env.dev --env-file-if-exists=../.env.local --import tsx server.ts",
     "test": "NODE_ENV=test node --env-file=../.env.test --import tsx ./node_modules/mocha/bin/mocha",
     "wintest": "SET NODE_ENV=test& node --env-file=../.env.test --import tsx ./node_modules/mocha/bin/mocha",
     "seed": "NODE_ENV=dev node --env-file=../.env.dev --import tsx scripts/seed-test-accounts.ts",
