@@ -20,4 +20,14 @@ declare module 'organic-money/src/index.js' {
 declare module 'organic-money/src/crypto.js' {
   export function dateToInt(date: Date): number
   export function intToDate(intdate: number): Date
+  export function randomPrivateKey(): string
+  export function publicFromPrivate(secretkey: string): string
+  export interface AesEncrypted {
+    msg: Uint8Array
+    iv: Uint8Array
+    salt: Uint8Array
+    verifier: Uint8Array
+  }
+  export function aesEncrypt(msg: Uint8Array, password: string): Promise<AesEncrypted>
+  export function aesDecrypt(encrypted: AesEncrypted, password: string): Promise<Uint8Array>
 }

@@ -13,5 +13,5 @@
     "skipLibCheck": true,
     "types": ["node", "mocha"]
   },
-  "include": ["app.ts", "server.ts", "app/**/*", "test/**/*", "types/**/*"]
+  "include": ["app.ts", "server.ts", "app/**/*", "test/**/*", "types/**/*", "scripts/**/*"]
 }

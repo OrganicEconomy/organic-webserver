@@ -52,6 +52,27 @@ On windows
 npm run wintest
 ```
 
+### Seed a test account with real history
+
+Creates one account directly in the database, with `--days` of genuinely
+backdated activity (daily money creation + occasional self-pay) — useful to
+manually test the webapp against something richer than a freshly registered
+empty account. All seeded accounts share the password `a`.
+
+On unix
+```bash
+npm run seed -- --name=Jonnhy --days=30
+```
+
+On windows
+```bash
+npm run winseed -- --name=Jonnhy --days=30
+```
+
+The script prints the generated email once done — log into the webapp with
+it via "Restaurer mon compte" (mot de passe `a`). Run it again (any name) to
+create another account; each call only ever creates one.
+
 ## For developpers
 
 Models are in app/models, there are three:

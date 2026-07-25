@@ -11,10 +11,17 @@ if (!process.env.ORGANIC_SECRET_KEY) {
     throw new Error('Missing ORGANIC_SECRET_KEY environment variable');
 }
 
+// CORS_EXTRA_ORIGINS (comma-separated, e.g. a personal LAN IP for phone
+// testing) lets a per-developer origin be added without hardcoding it here.
+const extraOrigins = (process.env.CORS_EXTRA_ORIGINS ?? '')
+    .split(',')
+    .map(origin => origin.trim())
+    .filter(origin => origin.length > 0)
+
 const corsOptions = {
-    origin: ['http://localhost:4200'],
+    origin: ['http://localhost:4200', 'https://localhost:4200', ...extraOrigins],
     methods: ['GET', 'POST', 'PUT'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-signature'],
     credentials: true,
     optionsSuccessStatus: 200
 };

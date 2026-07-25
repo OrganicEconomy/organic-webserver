@@ -2,7 +2,7 @@ import request from 'supertest';
 import app from "../app.js";
 import assert from "assert";
 import { WaitingTx, User } from "../app/models.js";
-import { CitizenBlockchain } from 'organic-money/src/index.js';
+import { CitizenBlockchain, signHash, hashTimestampAuth } from 'organic-money/src/index.js';
 
 const SECRETKEY = process.env.ORGANIC_SECRET_KEY as string
 
@@ -130,6 +130,51 @@ describe('POST /tx/send', () => {
         const saved = await WaitingTx.findOne({ where: { hash: txExported.h } }) as any
         assert.ok(saved, "WaitingTx should be findable by its hash (tx.h)")
         assert.equal(saved.target, txExported.p)
+    });
+});
+
+describe('GET /tx/list', () => {
+    it('Should return a bare TxWire[] — PROTOCOL.md §5.2, not the internal WaitingTx row shape.', async () => {
+        const bc = new CitizenBlockchain()
+        const sk = bc.startBlockchain("Payer", new Date(), SECRETKEY)
+        const pk = bc.getMyPublicKey()
+        const receiverBc = new CitizenBlockchain()
+        const receiverSk = receiverBc.startBlockchain("Receiver", new Date(), SECRETKEY)
+        const pk2 = receiverBc.getMyPublicKey()
+
+        // pay → save (simulated directly here) → send, the strict order the protocol requires.
+        const transaction = bc.pay(sk, pk2, 1)
+        const txExported = transaction.export()
+
+        await User.create({
+            mail: `${pk}@test.test`,
+            password: "test",
+            publickey: pk,
+            name: "Payer",
+            secretkey: sk,
+            blocks: bc.export()
+        })
+
+        await request(app)
+            .post('/api/tx/send')
+            .send({ tx: txExported })
+            .expect(200)
+
+        const ts = Math.floor(Date.now() / 1000)
+        const sig = signHash(hashTimestampAuth(pk2, ts), receiverSk)
+
+        const res = await request(app)
+            .get('/api/tx/list')
+            .set('x-signature', sig)
+            .query({ publickey: pk2, timestamp: ts })
+            .expect(200)
+
+        assert.equal(res.body.length, 1)
+        // A bare TxWire has these fields directly — not nested under `.tx`,
+        // and without the WaitingTx row's own `hash`/`target`/`createdAt`.
+        assert.equal(res.body[0].h, txExported.h)
+        assert.equal(res.body[0].s, txExported.s)
+        assert.equal(res.body[0].tx, undefined)
     });
 });
 
