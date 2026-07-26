@@ -2,7 +2,7 @@
 
 Base URL: `https://<host>/api/v1` (a legacy `https://<host>/api` alias is kept for the duration of Phase 1). This is the server-side implementation of the standard described in [PROTOCOL.md](https://github.com/OrganicEconomy/organic-protocol/blob/main/PROTOCOL.md) (package [`organic-protocol`](https://www.npmjs.com/package/organic-protocol)) — that document is authoritative for wire formats and semantics; this one lists what this server actually exposes.
 
-All responses are JSON. Non-2xx responses carry `{ "error": "<message>", "code"?: "<ApiErrorCode>" }`; `code` is only present for the enumerated cases below. Rate limits apply in production (not in `NODE_ENV=test`).
+All responses are JSON. Non-2xx responses carry `{ "error": "<message>", "code"?: "<ApiErrorCode>" }`; `code` is only present for the enumerated cases below. Rate limits apply whenever `NODE_ENV` is not `test` — including local dev, not just production.
 
 ---
 
@@ -85,6 +85,7 @@ Register a new user. The blockchain must contain exactly one BirthBlock awaiting
 **Responses:**
 - `200` — `{ publickey, blocks, devicetoken }` (validated blockchain)
 - `400` — missing fields or invalid blockchain
+- `500` — error while creating the user (JSON)
 
 ---
 
@@ -119,8 +120,7 @@ Save an updated block to the user's blockchain. Also removes any `WaitingTx` inc
 
 **Responses:**
 - `200` — success
-- `400` — missing fields
-- `401` — missing or invalid signature
+- `401` — missing `publickey`/`block`/`x-signature`, or the signature doesn't verify (block auth itself rejects missing fields — a bare 400 never reaches this route)
 - `404` — unknown user
 - `409 DEVICE_REVOKED` — `devicetoken` does not match the active device (a more recent login happened elsewhere)
 - `500` — blockchain update error (JSON)
@@ -140,8 +140,7 @@ Sign the last block of the user's blockchain using the server's own secret key �
 
 **Responses:**
 - `200` — success
-- `400` — missing fields
-- `401` — missing or invalid signature
+- `401` — missing `publickey`/`block`/`x-signature`, or the signature doesn't verify (block auth itself rejects missing fields — a bare 400 never reaches this route)
 - `404` — unknown user
 - `500` — block already signed or signing error (JSON)
 
@@ -181,7 +180,8 @@ Transaction export format: `{ v, d, s, p, m, i, t, h }` — see PROTOCOL.md §2.
 
 **Responses:**
 - `200` — success
-- `400 INVALID_TX` — missing or cryptographically invalid transaction
+- `400` — missing `tx` (no `code`)
+- `400 INVALID_TX` — transaction present but cryptographically invalid
 - `403 UNKNOWN_SENDER` — sender not registered
 - `400 INVALID_CHAIN` — sender's saved chain fails validation
 - `404 TX_NOT_IN_CHAIN` — the transaction is not (yet) part of the sender's saved chain
@@ -211,11 +211,13 @@ Read-only, public. Deferred verification of a payment received hand-to-hand offl
 { "tx": { ...transaction export } }
 ```
 
-**Responses:** always `200` — `{ "status": "confirmed" | "pending" | "invalid" | "unknown-sender" }`
-- `confirmed` — the tx is in the sender's saved, valid chain
-- `pending` — sender known and chain valid, but the tx isn't saved there yet
-- `invalid` — malformed/forged transaction, or the sender's saved chain is itself invalid
-- `unknown-sender` — the signer is not a registered user of this server
+**Responses:**
+- `400` — missing `tx` (no `code`)
+- `200` — `{ "status": "confirmed" | "pending" | "invalid" | "unknown-sender" }` otherwise:
+  - `confirmed` — the tx is in the sender's saved, valid chain
+  - `pending` — sender known and chain valid, but the tx isn't saved there yet
+  - `invalid` — malformed/forged transaction, or the sender's saved chain is itself invalid
+  - `unknown-sender` — the signer is not a registered user of this server
 
 ---
 
@@ -225,11 +227,11 @@ Read-only, public. Deferred verification of a payment received hand-to-hand offl
 
 Check if a paper (by hash) has already been cashed.
 
-**Query params:** `?hash=<141-char-hash>`
+**Query params:** `?hash=<hex-encoded signature>` (a DER-encoded SECP256K1 signature — length varies with r/s padding, ~136-142 hex chars in practice)
 
 **Responses:**
 - `200` — the hash (paper exists and is cashed)
-- `400` — missing or invalid hash format (must be exactly 141 chars)
+- `400` — missing or invalid hash format (not a hex string of plausible signature length)
 - `404` — paper not found
 
 ---
@@ -245,5 +247,6 @@ Cash a paper bill. Requires the **full transaction**, not a bare hash — the se
 
 **Responses:**
 - `200` — success message
-- `400 INVALID_TX` — missing, cryptographically invalid, or not a PAPER transaction
+- `400` — missing `tx` (no `code`)
+- `400 INVALID_TX` — transaction present but cryptographically invalid, or not a PAPER transaction
 - `409 ALREADY_CASHED` — this paper was already cashed

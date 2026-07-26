@@ -22,6 +22,8 @@
     "wintest": "SET NODE_ENV=test& node --env-file=../.env.test --import tsx ./node_modules/mocha/bin/mocha",
     "seed": "NODE_ENV=dev node --env-file=../.env.dev --import tsx scripts/seed-test-accounts.ts",
     "winseed": "SET NODE_ENV=dev& node --env-file=../.env.dev --import tsx scripts/seed-test-accounts.ts",
+    "e2e": "node --import tsx scenario/e2e-solo.mjs",
+    "wine2e": "node --import tsx scenario/e2e-solo.mjs",
     "build": "tsc --noEmit"
   },
   "dependencies": {
