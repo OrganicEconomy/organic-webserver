@@ -50,14 +50,14 @@ const User = sequelize.define("user", {
 
 const UsedPaper = sequelize.define("usedpaper", {
     hash: {
-        type: Sequelize.STRING(141),
+        type: Sequelize.STRING(146),
         primaryKey: true,
     }
 });
 
 const WaitingTx = sequelize.define("waitingtx", {
     hash: {
-        type: Sequelize.STRING(141),
+        type: Sequelize.STRING(146),
         allowNull: false,
         primaryKey: true
     },
