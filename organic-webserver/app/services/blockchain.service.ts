@@ -51,13 +51,19 @@ export function isValidTransaction(tx: TxWire): boolean {
 }
 
 /**
- * Load a citizen's SAVED chain and assert it is valid (PROTOCOL.md §5.3, step 2).
+ * Load a citizen's SAVED chain and assert it is valid AND validated
+ * (PROTOCOL.md §5.3, step 2). A chain can be perfectly well-formed and still
+ * be a lone, self-signed BirthBlock awaiting a referent's approval — that
+ * passes assertIsValid() (it's not corrupt), but must not be treated as
+ * trustworthy for cross-verification: a not-yet-validated account has no
+ * business sending or being credited with cross-verified transactions.
  * Returns null instead of throwing — call sites turn that into INVALID_CHAIN.
  */
 export function loadValidChain(blocks: BlockWire[]) {
     try {
         const blockchain = new CitizenBlockchain(blocks)
         blockchain.assertIsValid()
+        if (!blockchain.isValidated()) return null
         return blockchain
     } catch {
         return null
