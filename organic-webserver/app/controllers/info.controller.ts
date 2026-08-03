@@ -2,7 +2,7 @@ import type { Request, Response } from 'express'
 import { readFile } from 'node:fs/promises'
 import { PROTOCOL_VERSION, type InfoResponse, type ServersResponse } from 'organic-protocol'
 import { publicFromPrivate } from 'organic-money/src/index.js'
-import { User } from '../models.js'
+import { User, Ecosystem } from '../models.js'
 
 const API_VERSION = '1'
 
@@ -16,12 +16,13 @@ function knownServersFile(): URL | string {
  * server-selection screen of the app.
  */
 export async function getInfo(_req: Request, res: Response): Promise<void> {
+    const core = await Ecosystem.findOne({ where: { iscore: true } }) as any
     const info: InfoResponse = {
         protocolVersion: PROTOCOL_VERSION,
         apiVersion: API_VERSION,
         name: process.env.ORGANIC_SERVER_NAME || 'Organic server',
         serverPk: publicFromPrivate(process.env.ORGANIC_SECRET_KEY!),
-        corePk: null, // no core ecosystem until Phase 2
+        corePk: core ? core.publickey : null,
         stats: { users: await User.count() },
     }
     res.send(info)
