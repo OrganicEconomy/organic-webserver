@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express'
 import { TxType } from 'organic-protocol'
-import { UsedPaper } from "../models.js";
+import { EcosystemBlockchain, TransactionMaker } from 'organic-money/src/index.js'
+import { UsedPaper, Ecosystem } from "../models.js";
 import { isValidTransaction } from "../services/blockchain.service.js"
 import { sendError } from '../utils/api-error.js'
 
@@ -30,10 +31,22 @@ export async function postCashPaper(req: Request, res: Response): Promise<void> 
 
     try {
         await UsedPaper.create({ hash: tx.h })
-        res.send({ message: "Papers successfully cashed." });
     } catch (err) {
         sendError(res, 500, (err as Error).message || "Some error occurred while creating the paper.")
+        return
     }
+
+    // Only a paper targeting a known Ecosystem gets applied to its chain —
+    // an old paper from before a core ecosystem existed just registers the
+    // hash above, as it always did (Phase-2.md §6 étape 10).
+    const targetEcoRow = await Ecosystem.findOne({ where: { publickey: tx.p } }) as any
+    if (targetEcoRow) {
+        const eco = new EcosystemBlockchain(targetEcoRow.blocks)
+        eco.cashPaper(TransactionMaker.make(tx))
+        await Ecosystem.update({ blocks: eco.export() }, { where: { publickey: tx.p } })
+    }
+
+    res.send({ message: "Papers successfully cashed." });
 }
 
 // A DER-encoded SECP256K1 signature (hex) doesn't have a fixed length — it
