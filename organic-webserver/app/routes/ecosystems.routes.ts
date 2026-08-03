@@ -3,6 +3,7 @@ import type { Request, Response, NextFunction } from "express";
 import {
     postCreateEcosystem, getEcosystemList, getMyEcosystems, getEcosystemInfo, putEcosystemMeta,
 } from "../controllers/ecosystem.controller.js";
+import { postEcosystemTx } from "../controllers/ecosystem-tx.controller.js";
 import { requireTimestampAuth } from "../middleware/auth.middleware.js";
 
 const router = Router();
@@ -32,5 +33,7 @@ router.get("/", getEcosystemList);
 router.get("/:pk", getEcosystemInfo);
 
 router.put("/:pk/meta", requireTimestampAuth, putEcosystemMeta);
+
+router.post("/:pk/tx", postEcosystemTx);
 
 export default router;
