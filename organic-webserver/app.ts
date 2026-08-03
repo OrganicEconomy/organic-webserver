@@ -6,6 +6,7 @@ import papersRouter from "./app/routes/used-papers.routes.js";
 import usersRouter from "./app/routes/users.routes.js";
 import txRouter from "./app/routes/waiting-tx.routes.js";
 import infoRouter from "./app/routes/info.routes.js";
+import validationsRouter from "./app/routes/validations.routes.js";
 
 if (!process.env.ORGANIC_SECRET_KEY) {
     throw new Error('Missing ORGANIC_SECRET_KEY environment variable');
@@ -71,6 +72,7 @@ api.use(infoRouter)
 api.use('/users', usersRouter)
 api.use('/tx', txRouter)
 api.use('/papers', papersRouter)
+api.use('/validations', validationsRouter)
 
 app.use('/api/v1', api)
 app.use('/api', api)
