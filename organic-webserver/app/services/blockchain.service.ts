@@ -12,6 +12,18 @@ export function validateBlockchain(blocks: BlockWire[]) {
     return blockchain.export()
 }
 
+/**
+ * Same shape check as validateBlockchain (a lone, well-formed BirthBlock),
+ * without signing — for a Phase 2 registration that isn't the server's
+ * open-genesis bootstrap and must stay pending-validation instead.
+ */
+export function assertWaitingValidation(blocks: BlockWire[]): void {
+    const blockchain = new CitizenBlockchain(blocks)
+    if (!blockchain.isWaitingValidation()) {
+        throw new Error(`Given blockchain isn't made for validation :  ${blocks}`)
+    }
+}
+
 export function updateLastBlock(blocks: BlockWire[], lastblock: BlockWire) {
     const madeLastblock = BlockMaker.make(lastblock)
 

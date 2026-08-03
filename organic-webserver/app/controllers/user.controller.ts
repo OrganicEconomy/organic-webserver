@@ -1,12 +1,13 @@
 import type { Request, Response } from 'express'
 import { randomUUID } from 'node:crypto'
-import { User, WaitingTx } from "../models.js"
+import { User, Ecosystem, WaitingTx } from "../models.js"
 import { Op } from 'sequelize'
 import bcrypt from 'bcryptjs'
-import type { BlockWire } from 'organic-protocol'
-import { publicFromPrivate } from 'organic-money/src/index.js'
+import type { BlockWire, MembershipStatus } from 'organic-protocol'
+import { publicFromPrivate, EcosystemBlockchain } from 'organic-money/src/index.js'
 
-import { validateBlockchain, updateLastBlock, signLastBlock } from '../services/blockchain.service.js'
+import { validateBlockchain, assertWaitingValidation, updateLastBlock, signLastBlock } from '../services/blockchain.service.js'
+import { encryptEcosystemKey } from '../utils/ecosystem-key.util.js'
 import { sendError } from '../utils/api-error.js'
 
 const SECRETKEY = process.env.ORGANIC_SECRET_KEY as string
@@ -33,8 +34,29 @@ export async function postLoginUser(req: Request, res: Response): Promise<void> 
     const devicetoken = randomUUID()
     await User.update({ devicetoken }, { where: { publickey: user.publickey } })
 
-    const { publickey, name, mail: userMail, secretkey, blocks } = user;
-    res.send({ publickey, name, mail: userMail, secretkey, blocks, devicetoken })
+    const { publickey, name, mail: userMail, secretkey, status, blocks } = user;
+    res.send({ publickey, name, mail: userMail, secretkey, status, blocks, devicetoken })
+}
+
+/**
+ * Creates this server's core ecosystem, self-signed and self-validated by
+ * its own freshly generated key (Phase-2.md §0.3/§2.2 — creation is free,
+ * there is no admin to ask yet anyway). founderPk is recorded as
+ * validatorpk purely for attribution, not as the chain's cryptographic
+ * referent. Runs once, right after the founder's own account is created.
+ */
+async function createCoreEcosystem(founderPk: string): Promise<void> {
+    const eco = new EcosystemBlockchain()
+    const ecoSk = eco.makeBirthBlock(null, founderPk, process.env.ORGANIC_SERVER_NAME || 'Organic server')
+    eco.validateAccount(ecoSk)
+    await Ecosystem.create({
+        publickey: eco.getMyPublicKey(),
+        name: process.env.ORGANIC_SERVER_NAME || 'Organic server',
+        blocks: eco.export(),
+        ecosk: await encryptEcosystemKey(ecoSk),
+        iscore: true,
+        validatorpk: founderPk,
+    })
 }
 
 export async function postRegister(req: Request, res: Response): Promise<void> {
@@ -44,21 +66,32 @@ export async function postRegister(req: Request, res: Response): Promise<void> {
         return;
     }
 
-    const user: { publickey: string, name: string, mail: string, password: string, secretkey: string, birthdate: string | null, validatorpk: string, devicetoken: string, blocks: BlockWire[] } = {
+    // Only the very first account on a fresh server self-validates (open
+    // genesis, bootstrap) — see Phase-2.md §6 étape 5. It also creates the
+    // server's core ecosystem in the same breath (below), so there is never
+    // a window where a validated citizen exists with no one able to
+    // validate the next one.
+    const isBootstrap = (await User.count()) === 0
+
+    const user: { publickey: string, name: string, mail: string, password: string, secretkey: string, birthdate: string | null, validatorpk: string | null, devicetoken: string, blocks: BlockWire[], status: MembershipStatus } = {
         publickey: req.body.publickey,
         name: req.body.name,
         mail: req.body.mail,
         password: await bcrypt.hash(req.body.password, 10),
         secretkey: req.body.secretkey,
         birthdate: req.body.birthdate ?? null,
-        // Phase 1 is open genesis: the server signs every account, so it is always the validator.
-        validatorpk: publicFromPrivate(SECRETKEY),
+        validatorpk: isBootstrap ? publicFromPrivate(SECRETKEY) : null,
         devicetoken: randomUUID(),
-        blocks: req.body.blocks
+        blocks: req.body.blocks,
+        status: isBootstrap ? 'active' : 'pending-validation',
     };
 
     try {
-        user.blocks = validateBlockchain(user.blocks)
+        if (isBootstrap) {
+            user.blocks = validateBlockchain(user.blocks)
+        } else {
+            assertWaitingValidation(user.blocks)
+        }
     } catch (err) {
         sendError(res, 400, "Invalid blockchain");
         return
@@ -66,7 +99,10 @@ export async function postRegister(req: Request, res: Response): Promise<void> {
 
     try {
         const data = await User.create(user) as any
-        res.send({ publickey: data.publickey, blocks: data.blocks, devicetoken: data.devicetoken })
+        if (isBootstrap) {
+            await createCoreEcosystem(data.publickey)
+        }
+        res.send({ publickey: data.publickey, status: data.status, blocks: data.blocks, devicetoken: data.devicetoken })
     } catch (err) {
         sendError(res, 500, (err as Error).message || "Some error occurred while creating the User.");
     }
