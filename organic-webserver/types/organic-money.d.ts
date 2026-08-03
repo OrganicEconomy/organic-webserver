@@ -14,7 +14,57 @@ declare module 'organic-money/src/index.js' {
   export const TransactionMaker: any
   export const Blockchain: any
   export const CitizenBlockchain: any
-  export const EcosystemBlockchain: any
+
+  /**
+   * Real typings for the class the Phase 2 ecosystem code actually calls —
+   * unlike CitizenBlockchain above (left `any`, unchanged since Phase 1, wide
+   * blast radius to type properly). `tx` parameters are Transaction *instances*
+   * (TransactionMaker.make() output), not raw TxWire objects.
+   */
+  export class EcosystemBlockchain {
+    constructor(blocks?: unknown[])
+    readonly blocks: unknown[]
+    readonly lastblock: any
+    readonly invests: unknown[]
+    getMyPublicKey(): string | null
+
+    makeBirthBlock(privateKey: string | null, adminPk: string, name: string, date?: Date): string
+    validateAccount(secretKey: string, date?: Date): unknown
+    startBlockchain(name: string, signerSk: string, adminPk: string, secretKey?: string | null, date?: Date): string
+
+    isWaitingValidation(): boolean
+    isValidated(): boolean
+
+    getAdmins(): Set<string>
+    getActors(): Map<string, number>
+    getPayers(): Map<string, number>
+    isAdmin(publickey: string): boolean
+    isActor(publickey: string): boolean
+    isPayer(publickey: string): boolean
+
+    getAffordableInvestAmount(date?: Date): number
+
+    receiveSetAdmin(tx: any): void
+    receiveUnsetAdmin(tx: any): void
+    receiveSetActor(tx: any): void
+    receiveUnsetActor(tx: any): void
+    receiveSetPayer(tx: any): void
+    receiveUnsetPayer(tx: any): void
+    receiveInvests(tx: any): void
+    receiveMoney(tx: any): void
+    receivePay(tx: any): void
+    receivePayerOrder(ecosystemSecretKey: string, tx: any): void
+    receiveEarn(tx: any): void
+
+    order(ecosystemSecretKey: string, targetPk: string, invests: number[], date?: Date): any
+    distributeSalary(ecosystemSecretKey: string, date?: Date): any[]
+    earn(ecosystemSecretKey: string, actorPk: string, moneyIds: number[]): any
+    cashPaper(tx: any): void
+
+    isValid(depth?: number, banList?: Map<string, unknown>): boolean
+    assertIsValid(depth?: number, banList?: Map<string, unknown>): void
+    export(): unknown[]
+  }
 }
 
 declare module 'organic-money/src/crypto.js' {

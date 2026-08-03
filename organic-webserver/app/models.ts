@@ -45,6 +45,69 @@ const User = sequelize.define("user", {
     devicetoken: {
         type: Sequelize.STRING,
         allowNull: true
+    },
+    /**
+     * 'active' by default so Phase 1 rows (all already open-genesis
+     * validated) need no migration. A non-bootstrap registration (Phase 2)
+     * creates the row as 'pending-validation' instead — see
+     * user.controller.ts postRegister.
+     */
+    status: {
+        type: Sequelize.STRING,
+        allowNull: false,
+        defaultValue: 'active'
+    }
+});
+
+/**
+ * A cooperative/association (PROTOCOL.md §5.2b). Unlike a citizen's
+ * secretkey, `ecosk` is decryptable by the server (see
+ * app/utils/ecosystem-key.util.ts) — the server is this ecosystem's
+ * custodian, signing on its behalf to execute payer orders and distribute
+ * salaries. Creation is free and self-validating (§0.3 of Phase-2.md): there
+ * is no 'pending-validation' status here, a row only ever exists once active.
+ */
+const Ecosystem = sequelize.define("ecosystem", {
+    publickey: {
+        type: Sequelize.STRING(70),
+        allowNull: false,
+        primaryKey: true,
+    },
+    name: {
+        type: Sequelize.STRING,
+        allowNull: false
+    },
+    blocks: {
+        type: Sequelize.JSON,
+        allowNull: false
+    },
+    /** Output of encryptEcosystemKey() — opaque JSON, never the plaintext key. */
+    ecosk: {
+        type: Sequelize.STRING,
+        allowNull: false
+    },
+    /** True for exactly one ecosystem per server: the first one ever created on it. */
+    iscore: {
+        type: Sequelize.BOOLEAN,
+        allowNull: false,
+        defaultValue: false
+    },
+    lat: {
+        type: Sequelize.FLOAT,
+        allowNull: true
+    },
+    lng: {
+        type: Sequelize.FLOAT,
+        allowNull: true
+    },
+    description: {
+        type: Sequelize.TEXT,
+        allowNull: true
+    },
+    /** The founding citizen's public key — attribution metadata, not a cryptographic validator (the ecosystem self-validates). */
+    validatorpk: {
+        type: Sequelize.STRING(70),
+        allowNull: false
     }
 });
 
@@ -71,4 +134,4 @@ const WaitingTx = sequelize.define("waitingtx", {
     }
 });
 
-export { User, UsedPaper, WaitingTx, sequelize }
+export { User, Ecosystem, UsedPaper, WaitingTx, sequelize }
