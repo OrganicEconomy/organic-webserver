@@ -32,7 +32,7 @@
     "express": "^5.2.1",
     "express-rate-limit": "^8.5.2",
     "organic-money": "^0.3.0",
-    "organic-protocol": "^0.2.0",
+    "organic-protocol": "^0.3.0",
     "pg": "^8.21.0",
     "pg-hstore": "^2.3.4",
     "sequelize": "^6.37.8",

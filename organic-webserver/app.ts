@@ -11,6 +11,10 @@ if (!process.env.ORGANIC_SECRET_KEY) {
     throw new Error('Missing ORGANIC_SECRET_KEY environment variable');
 }
 
+if (!process.env.ORGANIC_MASTER_KEY) {
+    throw new Error('Missing ORGANIC_MASTER_KEY environment variable');
+}
+
 // CORS_EXTRA_ORIGINS (comma-separated, e.g. a personal LAN IP for phone
 // testing) lets a per-developer origin be added without hardcoding it here.
 const extraOrigins = (process.env.CORS_EXTRA_ORIGINS ?? '')
