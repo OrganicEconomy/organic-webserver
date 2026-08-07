@@ -84,6 +84,36 @@ describe('POST /tx/send', () => {
         assert.equal(res.body.code, 'INVALID_CHAIN')
     });
 
+    it('Should return 400 INVALID_CHAIN when the sender is not yet validated (pending account).', async () => {
+        // A candidate that registered but has no InitializationBlock yet
+        // (Phase 2: pending-validation) must not be able to send/receive
+        // payments before an admin actually validates them.
+        const bc = new CitizenBlockchain()
+        const sk = bc.makeBirthBlock("Candidate", new Date(), null)
+        const pk = bc.getMyPublicKey()
+        const pk2 = await makeReceiver()
+        const transaction = bc.pay(sk, pk2, 1)
+
+        // Saved *after* pay(), so the tx is in the candidate's own saved
+        // history — isolates the isValidated() gap from the (already
+        // separately tested) TX_NOT_IN_CHAIN check.
+        await User.create({
+            mail: `${pk}@test.test`,
+            password: "test",
+            publickey: pk,
+            name: "Candidate",
+            secretkey: sk,
+            blocks: bc.export()
+        })
+
+        const res = await request(app)
+            .post('/api/tx/send')
+            .set('Accept', 'application/json')
+            .send({ tx: transaction.export() })
+            .expect(400)
+        assert.equal(res.body.code, 'INVALID_CHAIN')
+    });
+
     it('Should return 404 TX_NOT_IN_CHAIN when the transaction was never saved by the sender.', async () => {
         // Registered, but the pay() below happens only in memory — never pushed via /save.
         // This is exactly the phantom-money attack PROTOCOL.md §5.3 step 3 exists to block.
