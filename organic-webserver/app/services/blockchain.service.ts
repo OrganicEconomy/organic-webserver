@@ -24,15 +24,26 @@ export function assertWaitingValidation(blocks: BlockWire[]): void {
     }
 }
 
+/**
+ * Applies a client-submitted block to the stored chain: either an update of
+ * the current last block (same previousHash — more transactions, or newly
+ * signed), or a genuinely new block chained onto it (previousHash equals the
+ * current last block's own signature). Returns null if neither holds — the
+ * submitted block does not chain onto what the server has, meaning one or
+ * more blocks were closed locally without ever being saved in between (a
+ * gap), rather than silently accepting a chain with a hole in it.
+ */
 export function updateLastBlock(blocks: BlockWire[], lastblock: BlockWire) {
     const madeLastblock = BlockMaker.make(lastblock)
 
     const blockchain = new CitizenBlockchain(blocks)
 
-    if (blockchain.lastblock.previousHash !== madeLastblock.previousHash) {
+    if (blockchain.lastblock.previousHash === madeLastblock.previousHash) {
+        blockchain.blocks[0] = madeLastblock
+    } else if (madeLastblock.previousHash === blockchain.lastblock.signature) {
         blockchain.addBlock(madeLastblock)
     } else {
-        blockchain.blocks[0] = madeLastblock
+        return null
     }
     return blockchain.export()
 }
