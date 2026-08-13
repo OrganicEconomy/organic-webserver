@@ -2,8 +2,8 @@ import request from 'supertest';
 import app from "../app.js";
 import assert from "assert";
 import bcrypt from 'bcryptjs';
-import { User, WaitingTx } from "../app/models.js";
-import { CitizenBlockchain, BlockMaker, signHash, hashTimestampAuth } from 'organic-money/src/index.js';
+import { User, Ecosystem, WaitingTx } from "../app/models.js";
+import { CitizenBlockchain, EcosystemBlockchain, BlockMaker, signHash, hashTimestampAuth } from 'organic-money/src/index.js';
 import { dateToInt } from 'organic-money/src/crypto.js';
 
 const TEST_SK = "ed945716dddb7af2c9774939e9946f1fee31f5ec0a3c6ec96059f119c396912f"
@@ -102,7 +102,12 @@ describe('POST /users/register', () => {
             .expect(400, done)
     });
 
-    it('Should return 200, a devicetoken and store birthdate + validatorpk for a valid blockchain.', async () => {
+    it('Should return 200, a devicetoken and store birthdate + validatorpk for the bootstrap (first-ever) account.', async () => {
+        // Only the very first account on the server self-validates — see the
+        // 'pending-validation' tests below for every account after it.
+        await Ecosystem.destroy({ where: {}, truncate: true })
+        await User.destroy({ where: {}, truncate: true })
+
         const bc = new CitizenBlockchain()
         const sk = "7201979f77794c943300a0070bb8320eccf57a68e10f0a667d8a5a075eb4dfcb"
         const pk = "0306ffd8f4fe843f5f7183179dcf36f550326813f56ec824911abca9c9d1cd7834"
@@ -127,11 +132,113 @@ describe('POST /users/register', () => {
 
         assert.ok(res.body.devicetoken)
         assert.ok(res.body.blocks)
+        assert.equal(res.body.status, 'active')
 
         const user = await User.findOne({ where: { publickey: pk } }) as any
         assert.equal(user.birthdate, "2012-12-28")
         assert.equal(user.devicetoken, res.body.devicetoken)
-        assert.ok(user.validatorpk, "validatorpk should be recorded (this server, in Phase 1 open genesis)")
+        assert.equal(user.status, 'active')
+        assert.ok(user.validatorpk, "validatorpk should be recorded (this server, bootstrap genesis)")
+    });
+
+    it('Should create the core ecosystem alongside the bootstrap account, with it as admin.', async () => {
+        await Ecosystem.destroy({ where: {}, truncate: true })
+        await User.destroy({ where: {}, truncate: true })
+
+        const bc = new CitizenBlockchain()
+        const sk = "7201979f77794c943300a0070bb8320eccf57a68e10f0a667d8a5a075eb4dfcb"
+        const pk = "0306ffd8f4fe843f5f7183179dcf36f550326813f56ec824911abca9c9d1cd7834"
+        bc.makeBirthBlock("Founder", new Date(2012, 11, 28), sk)
+
+        await request(app)
+            .post('/api/users/register')
+            .set('Accept', 'application/json')
+            .send({
+                publickey: pk,
+                name: "Founder",
+                mail: "founder@mail.com",
+                password: "a",
+                secretkey: sk,
+                birthdate: "2012-12-28",
+                blocks: bc.export()
+            })
+            .expect(200)
+
+        const cores = await Ecosystem.findAll({ where: { iscore: true } }) as any[]
+        assert.equal(cores.length, 1)
+        assert.equal(cores[0].validatorpk, pk)
+
+        const eco = new EcosystemBlockchain(cores[0].blocks)
+        assert.equal(eco.isValidated(), true)
+        assert.ok(eco.isAdmin(pk), "the founder should be admin of the core ecosystem")
+    });
+
+    it("Should return 200 with status 'pending-validation' and no validatorpk for any account after the first.", async () => {
+        // Guarantee a non-bootstrap state deterministically, regardless of
+        // what earlier tests in this run already created.
+        await Ecosystem.destroy({ where: {}, truncate: true })
+        await User.destroy({ where: {}, truncate: true })
+        await User.create({
+            mail: "already-here@test.test", password: "x", publickey: "already-here-pk",
+            name: "Already here", secretkey: "x", blocks: [], status: 'active'
+        })
+
+        const bc = new CitizenBlockchain()
+        const sk = "8201979f77794c943300a0070bb8320eccf57a68e10f0a667d8a5a075eb4dfcb"
+        const pk = "0206ffd8f4fe843f5f7183179dcf36f550326813f56ec824911abca9c9d1cd7834"
+        bc.makeBirthBlock("Candidate", new Date(2012, 11, 28), sk)
+
+        const res = await request(app)
+            .post('/api/users/register')
+            .set('Accept', 'application/json')
+            .send({
+                publickey: pk,
+                name: "Candidate",
+                mail: "candidate@mail.com",
+                password: "a",
+                secretkey: sk,
+                birthdate: "2012-12-28",
+                blocks: bc.export()
+            })
+            .expect(200)
+
+        assert.equal(res.body.status, 'pending-validation')
+
+        const user = await User.findOne({ where: { publickey: pk } }) as any
+        assert.equal(user.status, 'pending-validation')
+        assert.equal(user.validatorpk, null)
+        assert.equal(user.blocks.length, 1, "should stay a lone BirthBlock — no InitializationBlock until an admin approves it")
+
+        // No second core ecosystem gets created for a non-bootstrap registration.
+        const cores = await Ecosystem.count({ where: { iscore: true } })
+        assert.equal(cores, 0)
+    });
+
+    it('Should reject a non-bootstrap registration whose blockchain is already validated.', async () => {
+        await Ecosystem.destroy({ where: {}, truncate: true })
+        await User.destroy({ where: {}, truncate: true })
+        await User.create({
+            mail: "already-here2@test.test", password: "x", publickey: "already-here-pk-2",
+            name: "Already here", secretkey: "x", blocks: [], status: 'active'
+        })
+
+        const bc = new CitizenBlockchain()
+        const sk = bc.startBlockchain("Sneaky", new Date(), SECRETKEY)
+        const pk = bc.getMyPublicKey()
+
+        await request(app)
+            .post('/api/users/register')
+            .set('Accept', 'application/json')
+            .send({
+                publickey: pk,
+                name: "Sneaky",
+                mail: "sneaky@mail.com",
+                password: "a",
+                secretkey: sk,
+                birthdate: "2012-12-28",
+                blocks: bc.export()
+            })
+            .expect(400)
     });
 });
 
