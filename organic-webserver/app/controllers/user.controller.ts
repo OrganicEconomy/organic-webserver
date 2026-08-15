@@ -1,13 +1,13 @@
 import type { Request, Response } from 'express'
 import { randomUUID } from 'node:crypto'
-import { User, Ecosystem, WaitingTx } from "../models.js"
+import { User, WaitingTx } from "../models.js"
 import { Op } from 'sequelize'
 import bcrypt from 'bcryptjs'
 import type { BlockWire, MembershipStatus } from 'organic-protocol'
-import { publicFromPrivate, EcosystemBlockchain } from 'organic-money/src/index.js'
+import { publicFromPrivate } from 'organic-money/src/index.js'
 
 import { validateBlockchain, assertWaitingValidation, updateLastBlock, signLastBlock } from '../services/blockchain.service.js'
-import { encryptEcosystemKey } from '../utils/ecosystem-key.util.js'
+import { createEcosystem } from '../services/ecosystem.service.js'
 import { sendError } from '../utils/api-error.js'
 
 const SECRETKEY = process.env.ORGANIC_SECRET_KEY as string
@@ -36,27 +36,6 @@ export async function postLoginUser(req: Request, res: Response): Promise<void> 
 
     const { publickey, name, mail: userMail, secretkey, status, blocks } = user;
     res.send({ publickey, name, mail: userMail, secretkey, status, blocks, devicetoken })
-}
-
-/**
- * Creates this server's core ecosystem, self-signed and self-validated by
- * its own freshly generated key (Phase-2.md §0.3/§2.2 — creation is free,
- * there is no admin to ask yet anyway). founderPk is recorded as
- * validatorpk purely for attribution, not as the chain's cryptographic
- * referent. Runs once, right after the founder's own account is created.
- */
-async function createCoreEcosystem(founderPk: string): Promise<void> {
-    const eco = new EcosystemBlockchain()
-    const ecoSk = eco.makeBirthBlock(null, founderPk, process.env.ORGANIC_SERVER_NAME || 'Organic server')
-    eco.validateAccount(ecoSk)
-    await Ecosystem.create({
-        publickey: eco.getMyPublicKey(),
-        name: process.env.ORGANIC_SERVER_NAME || 'Organic server',
-        blocks: eco.export(),
-        ecosk: await encryptEcosystemKey(ecoSk),
-        iscore: true,
-        validatorpk: founderPk,
-    })
 }
 
 export async function postRegister(req: Request, res: Response): Promise<void> {
@@ -100,7 +79,7 @@ export async function postRegister(req: Request, res: Response): Promise<void> {
     try {
         const data = await User.create(user) as any
         if (isBootstrap) {
-            await createCoreEcosystem(data.publickey)
+            await createEcosystem(data.publickey, process.env.ORGANIC_SERVER_NAME || 'Organic server')
         }
         res.send({ publickey: data.publickey, status: data.status, blocks: data.blocks, devicetoken: data.devicetoken })
     } catch (err) {
