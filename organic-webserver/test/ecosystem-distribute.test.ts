@@ -41,7 +41,7 @@ function timestampAuth(pk: string, sk: string) {
 }
 
 describe('POST /ecosystems/:pk/distribute', () => {
-    it('Should return 403 for someone who is neither admin nor payer.', async () => {
+    it('Should return 403 for someone who is not an admin.', async () => {
         const { pk: adminPk } = await makeActiveCitizen("Admin1")
         const ecoPk = await makeEcosystem(adminPk)
         const { pk: strangerPk, sk: strangerSk } = await makeActiveCitizen("Stranger")
@@ -100,7 +100,7 @@ describe('POST /ecosystems/:pk/distribute', () => {
         assert.equal(eco.isActor(actorPk), true)
     });
 
-    it('Should also allow a payer (not just an admin) to trigger distribution.', async () => {
+    it('Should return 403 for a payer who is not an admin.', async () => {
         const { bc: adminBc, sk: adminSk, pk: adminPk } = await makeActiveCitizen("Admin4")
         const ecoPk = await makeEcosystem(adminPk)
         const { pk: payerPk, sk: payerSk } = await makeActiveCitizen("PayerRole")
@@ -110,10 +110,11 @@ describe('POST /ecosystems/:pk/distribute', () => {
         await request(app).post(`/api/v1/ecosystems/${ecoPk}/tx`).send({ tx: payerRoleTx.export() }).expect(200)
 
         const { ts, sig } = timestampAuth(payerPk, payerSk)
-        await request(app)
+        const res = await request(app)
             .post(`/api/v1/ecosystems/${ecoPk}/distribute`)
             .set('x-signature', sig)
             .send({ publickey: payerPk, timestamp: ts })
-            .expect(200)
+            .expect(403)
+        assert.equal(res.body.code, 'NOT_CORE_ADMIN')
     });
 });
