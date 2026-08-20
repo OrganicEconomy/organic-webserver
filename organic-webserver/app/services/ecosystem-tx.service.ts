@@ -23,7 +23,7 @@ export function ecosystemTarget(tx: TxWire): string | undefined {
  * citizen — same as tx/send, the target's registration isn't re-verified
  * here either).
  */
-async function routeEarn(earnTx: any): Promise<void> {
+export async function routeEarn(earnTx: any): Promise<void> {
     const targetPk = earnTx.target
     const targetEcoRow = await Ecosystem.findOne({ where: { publickey: targetPk } }) as any
 
