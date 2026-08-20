@@ -1,7 +1,9 @@
-import { Blockchain, CitizenBlockchain, BlockMaker, TransactionMaker } from 'organic-money/src/index.js';
+import { Blockchain, CitizenBlockchain, BlockMaker, TransactionMaker, publicFromPrivate } from 'organic-money/src/index.js';
 import type { BlockWire, TxWire } from 'organic-protocol'
+import { Ecosystem } from '../models.js'
+import { decryptEcosystemKey } from '../utils/ecosystem-key.util.js'
 
-const SECRETKEY = process.env.ORGANIC_SECRET_KEY
+const SECRETKEY = process.env.ORGANIC_SECRET_KEY as string
 
 export function validateBlockchain(blocks: BlockWire[]) {
     const blockchain = new CitizenBlockchain(blocks)
@@ -54,14 +56,30 @@ export function updateLastBlock(blocks: BlockWire[], lastblock: BlockWire) {
  * owner (organic-money 0.2.5), which is correct for a citizen closing their
  * own block but wrong here. Sign the block directly instead, as the library
  * itself does internally minus that ownership guard.
+ *
+ * A block containing a paper (getPapersHandler()) must be signed by whoever
+ * that paper targets — the server's own key only for old papers already in
+ * circulation from before a core ecosystem existed (or a block with no
+ * paper at all, e.g. genesis); a known Ecosystem's own key otherwise
+ * (Phase-2.md §6 étape 10).
  */
-export function signLastBlock(blocks: BlockWire[]) {
+export async function signLastBlock(blocks: BlockWire[]) {
     const blockchain = new CitizenBlockchain(blocks)
     if (!!blockchain.lastblock.isSigned()) {
         throw new Error(`Given block is already signed.`)
-    } else {
-        blockchain.lastblock.sign(SECRETKEY)
     }
+
+    const handlerPk = blockchain.lastblock.getPapersHandler()
+    let signingKey = SECRETKEY
+    if (handlerPk !== null && handlerPk !== publicFromPrivate(SECRETKEY)) {
+        const eco = await Ecosystem.findOne({ where: { publickey: handlerPk } }) as any
+        if (!eco) {
+            throw new Error('Unknown papers handler.')
+        }
+        signingKey = await decryptEcosystemKey(eco.ecosk)
+    }
+
+    blockchain.lastblock.sign(signingKey)
     return blockchain.export()
 }
 

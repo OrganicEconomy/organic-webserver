@@ -3,8 +3,9 @@ import app from "../app.js";
 import assert from "assert";
 import bcrypt from 'bcryptjs';
 import { User, Ecosystem, WaitingTx } from "../app/models.js";
-import { CitizenBlockchain, EcosystemBlockchain, BlockMaker, signHash, hashTimestampAuth } from 'organic-money/src/index.js';
+import { CitizenBlockchain, EcosystemBlockchain, BlockMaker, signHash, hashTimestampAuth, publicFromPrivate } from 'organic-money/src/index.js';
 import { dateToInt } from 'organic-money/src/crypto.js';
+import { encryptEcosystemKey } from '../app/utils/ecosystem-key.util.js';
 
 const TEST_SK = "ed945716dddb7af2c9774939e9946f1fee31f5ec0a3c6ec96059f119c396912f"
 const TEST_PK = "02c85e4e448d67a8dc724c620f3fe7d2a3a3cce9fe905b918f712396b4f8effcb3"
@@ -567,5 +568,41 @@ describe('PUT /users/sign', () => {
         assert.ok(user.blocks[0].h)
         assert.equal(user.blocks[0].x.length, 2)
         assert.ok(new CitizenBlockchain(user.blocks).lastblock.isValid())
+    });
+
+    it('Should sign with the target ecosystem key when the block contains a paper addressed to it (not the server key).', async () => {
+        const eco = new EcosystemBlockchain()
+        const adminBc = new CitizenBlockchain()
+        const adminSk = adminBc.startBlockchain("EcoAdmin", new Date(), SECRETKEY)
+        const ecoSk = eco.makeBirthBlock(null, adminBc.getMyPublicKey(), "Core")
+        eco.validateAccount(ecoSk)
+        const ecoPk = eco.getMyPublicKey()
+        await Ecosystem.create({
+            publickey: ecoPk, name: "Core", blocks: eco.export(),
+            ecosk: await encryptEcosystemKey(ecoSk), iscore: true, validatorpk: adminBc.getMyPublicKey(),
+        })
+
+        const bc = new CitizenBlockchain()
+        const sk = bc.startBlockchain("PaperMaker", new Date(), SECRETKEY)
+        const pk = bc.getMyPublicKey()
+        bc.createMoneyAndInvests(sk)
+        bc.generatePaper(sk, 1, ecoPk) // opens a fresh block automatically (InitializationBlock was already signed)
+
+        await User.create({
+            mail: "papermaker@test.test", password: "test", publickey: pk,
+            name: "PaperMaker", secretkey: sk, blocks: bc.export()
+        })
+
+        const blockToSign = bc.export()[0]
+        await request(app)
+            .put('/api/users/sign')
+            .set('x-signature', signBlock(blockToSign, sk))
+            .send({ publickey: pk, block: blockToSign })
+            .expect(200)
+
+        const user = await User.findOne({ where: { publickey: pk } }) as any
+        const signedBlock = user.blocks[0]
+        assert.equal(signedBlock.s, ecoPk, "signed by the ecosystem's own key, not the server's")
+        assert.notEqual(signedBlock.s, publicFromPrivate(SECRETKEY))
     });
 });

@@ -1,8 +1,9 @@
 import request from 'supertest';
 import app from "../app.js";
 import assert from "assert";
-import { UsedPaper } from "../app/models.js";
-import { CitizenBlockchain } from 'organic-money/src/index.js';
+import { UsedPaper, Ecosystem } from "../app/models.js";
+import { CitizenBlockchain, EcosystemBlockchain } from 'organic-money/src/index.js';
+import { encryptEcosystemKey } from '../app/utils/ecosystem-key.util.js';
 
 const SECRETKEY = process.env.ORGANIC_SECRET_KEY as string
 
@@ -174,5 +175,43 @@ describe('POST /cashPaper', () => {
             .send({ tx: exported })
             .expect(409)
         assert.equal(res.body.code, 'ALREADY_CASHED')
+    });
+
+    it("Should apply the paper's money to the target ecosystem's own chain when it is a known ecosystem.", async () => {
+        const eco = new EcosystemBlockchain()
+        const adminBc = new CitizenBlockchain()
+        const adminSk = adminBc.startBlockchain("EcoAdmin2", new Date(), SECRETKEY)
+        const ecoSk = eco.makeBirthBlock(null, adminBc.getMyPublicKey(), "Core2")
+        eco.validateAccount(ecoSk)
+        const ecoPk = eco.getMyPublicKey()
+        await Ecosystem.create({
+            publickey: ecoPk, name: "Core2", blocks: eco.export(),
+            ecosk: await encryptEcosystemKey(ecoSk), iscore: false, validatorpk: adminBc.getMyPublicKey(),
+        })
+
+        const bc = new CitizenBlockchain()
+        const sk = bc.startBlockchain("PaperMaker2", new Date(), SECRETKEY)
+        bc.createMoneyAndInvests(sk)
+        const paper = bc.generatePaper(sk, 1, ecoPk)
+
+        await request(app)
+            .post('/api/papers/cash')
+            .send({ tx: paper.export() })
+            .expect(200)
+
+        const row = await Ecosystem.findOne({ where: { publickey: ecoPk } }) as any
+        const reloaded = new EcosystemBlockchain(row.blocks)
+        const cashedPaperTxs = reloaded.lastblock.transactions.filter((t: any) => t.type === 5)
+        assert.equal(cashedPaperTxs.length, 1, "the ecosystem's own chain should record the cashed paper")
+    });
+
+    it('Should still register the hash only (legacy behavior) when the paper targets an unknown pk.', async () => {
+        // The referent in makePaper() is just a random citizen pk, not a
+        // registered Ecosystem row — this must not throw.
+        const paper = makePaper()
+        await request(app)
+            .post('/api/papers/cash')
+            .send({ tx: paper.export() })
+            .expect(200)
     });
 });
