@@ -63,7 +63,7 @@ export async function postEcosystemTx(req: Request, res: Response): Promise<void
 
 /**
  * POST /ecosystems/:pk/distribute — timestamp-auth, caller must be an admin
- * or payer of :pk. Manual only (Phase-2.md §6 étape 9) — no scheduling.
+ * of :pk. Manual only (Phase-2.md §6 étape 9) — no scheduling.
  * Each resulting EARN is routed exactly like a payer-order payout.
  */
 export async function postDistributeSalary(req: Request, res: Response): Promise<void> {
@@ -77,8 +77,8 @@ export async function postDistributeSalary(req: Request, res: Response): Promise
     }
 
     const eco = new EcosystemBlockchain(row.blocks)
-    if (!eco.isAdmin(publickey) && !eco.isPayer(publickey)) {
-        sendError(res, 403, "Not an admin or payer of this ecosystem", 'NOT_CORE_ADMIN')
+    if (!eco.isAdmin(publickey)) {
+        sendError(res, 403, "Not an admin of this ecosystem", 'NOT_CORE_ADMIN')
         return
     }
 

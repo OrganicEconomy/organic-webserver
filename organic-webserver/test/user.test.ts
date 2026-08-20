@@ -310,6 +310,11 @@ describe('PUT /users/save', () => {
         const sk = bc.startBlockchain("testName", new Date(), SECRETKEY)
         const pk = bc.getMyPublicKey()
 
+        // The server already has a closed block on top of genesis (e.g. from
+        // an earlier save) — the citizen is now sending the *next* one.
+        bc.newBlock()
+        bc.closeLastBlock(sk)
+
         await User.create({
             mail: "test@test.test",
             password: "test",
@@ -320,18 +325,11 @@ describe('PUT /users/save', () => {
             devicetoken: "current-device"
         })
 
-        const expected = {
-            v: 0,
-            d: "20121212",
-            p: "aaa",
-            s: 'bbb',
-            r: "root",
-            m: "",
-            i: "",
-            t: 2000,
-            h: "toto",
-            x: []
-        }
+        // A genuinely new block must chain onto the currently stored last
+        // block rather than an arbitrary unrelated one — see the
+        // gap-rejection test below for why.
+        bc.newBlock()
+        const expected = bc.lastblock.export()
 
         await request(app)
             .put('/api/users/save')
@@ -342,7 +340,43 @@ describe('PUT /users/save', () => {
 
         const user = await User.findOne({ where: { publickey: pk } }) as any
         assert.deepEqual(user.blocks[0], expected)
-        assert.equal(user.blocks.length, 3)
+        assert.equal(user.blocks.length, 4)
+    });
+
+    it('Should reject a block that skips ahead of the currently stored last block (a block was lost in transit).', async () => {
+        const bc = new CitizenBlockchain()
+        const sk = bc.startBlockchain("testName", new Date(), SECRETKEY)
+        const pk = bc.getMyPublicKey()
+
+        await User.create({
+            mail: "test@test.test",
+            password: "test",
+            publickey: pk,
+            name: "test",
+            secretkey: sk,
+            blocks: bc.export(),
+            devicetoken: "current-device"
+        })
+
+        // Locally, close two blocks in a row without ever saving the first one
+        // (e.g. offline, generating several paper bills back to back) — the
+        // server only ever heard about the original open block.
+        bc.newBlock()
+        bc.closeLastBlock(sk)
+        bc.newBlock()          // "skippedBlock" — closed locally, never saved to the server
+        bc.closeLastBlock(sk)
+        bc.newBlock()
+
+        const toSend = bc.lastblock.export()
+        await request(app)
+            .put('/api/users/save')
+            .set('Accept', 'application/json')
+            .set('x-signature', signBlock(toSend, sk))
+            .send({ publickey: pk, block: toSend, devicetoken: "current-device" })
+            .expect(409)
+
+        const user = await User.findOne({ where: { publickey: pk } }) as any
+        assert.equal(user.blocks.length, 2, "the gapped save must not be applied")
     });
 
     it('Should return 409 DEVICE_REVOKED when the devicetoken is stale.', async () => {
