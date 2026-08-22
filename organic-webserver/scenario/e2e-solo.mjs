@@ -3,8 +3,11 @@
  * scripts/seed-test-accounts.ts, which builds a chain in-process to backdate
  * history). Builds real blocks/transactions with organic-money and talks to
  * a running server exactly like organic-webapp's server-connection.service.ts
- * does: genesis -> daily money -> online payment -> cash-in -> paper ->
- * paper cash-in -> reject double cash-in.
+ * does: genesis (+ automatic core ecosystem) -> daily money -> validate a
+ * second citizen -> online payment -> cash-in -> ecosystem roles -> invest
+ * engagement -> payer order (auto-routed, no claim step) -> salary
+ * distribution -> paper (targets the core) -> paper cash-in -> reject
+ * double cash-in.
  *
  * Usage:
  *   npm run e2e      (POSIX)
@@ -13,7 +16,7 @@
  * Defaults to E2E_BASE_URL=http://localhost:6868 (the port in .env.dev) —
  * point it at a docker-compose instance with E2E_BASE_URL=http://localhost:8080.
  */
-import { CitizenBlockchain, TransactionMaker, signHash, hashTimestampAuth } from 'organic-money/src/index.js'
+import { CitizenBlockchain, EcosystemBlockchain, TransactionMaker, signHash, hashTimestampAuth } from 'organic-money/src/index.js'
 import { aesEncrypt } from 'organic-money/src/crypto.js'
 
 const BASE = process.env.E2E_BASE_URL || 'http://localhost:6868'
@@ -167,7 +170,7 @@ async function registerCitizen(name, genesisDate = new Date()) {
   const { status, json } = await request('POST', '/users/register', { body })
   assert(status === 200, `register(${name}) expected 200, got ${status}: ${JSON.stringify(json)}`)
 
-  return { name, sk, devicetoken: json.devicetoken, chain: new CitizenBlockchain(json.blocks) }
+  return { name, sk, devicetoken: json.devicetoken, status: json.status, chain: new CitizenBlockchain(json.blocks) }
 }
 
 async function saveBlock(citizen) {
@@ -182,12 +185,26 @@ async function signBlock(citizen) {
   assert(status === 200, `sign(${citizen.name}) expected 200, got ${status}: ${JSON.stringify(json)}`)
 }
 
+/** Fetches an ecosystem's public chain and reconstructs it locally. */
+async function fetchEcosystem(pk) {
+  const { status, json } = await request('GET', `/ecosystems/${pk}`)
+  assert(status === 200, `GET /ecosystems/${pk} expected 200, got ${status}: ${JSON.stringify(json)}`)
+  return new EcosystemBlockchain(json.blocks)
+}
+
+/** Posts a citizen-signed transaction to an ecosystem, after functionally saving the signer's own block. */
+async function sendEcosystemTx(signer, ecoPk, tx) {
+  await saveBlock(signer)
+  const { status, json } = await request('POST', `/ecosystems/${ecoPk}/tx`, { body: { tx: tx.export() } })
+  assert(status === 200, `POST /ecosystems/${ecoPk}/tx expected 200, got ${status}: ${JSON.stringify(json)}`)
+}
+
 // ── scenario ─────────────────────────────────────────────────────────────
 
 async function main() {
   console.log(`E2E against ${BASE}\n`)
 
-  let server, A, B
+  let server, corePk, A, B
 
   await step('server becomes ready (GET /info)', async () => {
     server = await waitForServer()
@@ -195,10 +212,54 @@ async function main() {
 
   await step('genesis: register citizen A (10 days ago, for the catch-up test below)', async () => {
     A = await registerCitizen('E2E-Alice', addDays(todayUTC(), -10))
+    assert(A.status === 'active', `A (bootstrap/first account) should be immediately active, got ${A.status}`)
   })
 
-  await step('genesis: register citizen B (today)', async () => {
+  await step("A's registration also created the server's core ecosystem, with her as admin", async () => {
+    const info = await request('GET', '/info').then((r) => r.json)
+    assert(info.corePk, 'expected /info to report a corePk once the bootstrap account exists')
+    corePk = info.corePk
+    const core = await fetchEcosystem(corePk)
+    assert(core.isAdmin(A.chain.getMyPublicKey()), 'A should be admin of the auto-created core ecosystem')
+  })
+
+  await step('genesis: register citizen B (today) — not the bootstrap account, so pending-validation', async () => {
     B = await registerCitizen('E2E-Bob')
+    assert(B.status === 'pending-validation', `expected B pending-validation, got ${B.status}`)
+    assert(B.chain.isWaitingValidation(), "B's local chain should still be a lone BirthBlock")
+  })
+
+  await step('A (core admin) validates B through the validation queue', async () => {
+    const listAuth = timestampAuthHeaders(A.chain.getMyPublicKey(), A.sk)
+    const { status: listStatus, json: list } = await request('GET', '/validations', {
+      headers: listAuth.headers,
+      query: { publickey: A.chain.getMyPublicKey(), timestamp: listAuth.timestamp },
+    })
+    assert(listStatus === 200, `GET /validations expected 200, got ${listStatus}: ${JSON.stringify(list)}`)
+    assert(list.some((v) => v.pk === B.chain.getMyPublicKey()), 'B should appear in the pending list')
+
+    const detailAuth = timestampAuthHeaders(A.chain.getMyPublicKey(), A.sk)
+    const { status: detailStatus, json: detail } = await request('GET', `/validations/${B.chain.getMyPublicKey()}`, {
+      headers: detailAuth.headers,
+      query: { publickey: A.chain.getMyPublicKey(), timestamp: detailAuth.timestamp },
+    })
+    assert(detailStatus === 200, `GET /validations/:pk expected 200, got ${detailStatus}: ${JSON.stringify(detail)}`)
+
+    const candidateChain = new CitizenBlockchain(detail.blocks)
+    const initBlock = candidateChain.validateAccount(A.sk)
+    const { status: approveStatus, json: approveJson } = await request('POST', `/validations/${B.chain.getMyPublicKey()}/approve`, {
+      body: { publickey: A.chain.getMyPublicKey(), block: initBlock.export() },
+      headers: blockAuthHeaders(initBlock, A.sk),
+    })
+    assert(approveStatus === 200, `approve expected 200, got ${approveStatus}: ${JSON.stringify(approveJson)}`)
+
+    B.chain = candidateChain // now validated locally, mirroring server state
+  })
+
+  await step("B's status is now active", async () => {
+    const { status, json } = await request('GET', `/validations/status/${B.chain.getMyPublicKey()}`)
+    assert(status === 200, `expected 200, got ${status}`)
+    assert(json.status === 'active', `expected active, got ${json.status}`)
   })
 
   await step("A's genesis granted exactly one day of money", async () => {
@@ -285,12 +346,26 @@ async function main() {
     await saveBlock(B)
   })
 
+  await step('A sets B as an actor of the core ecosystem (ratio 1)', async () => {
+    const tx = A.chain.setActor(A.sk, corePk, B.chain.getMyPublicKey(), 1)
+    await sendEcosystemTx(A, corePk, tx)
+    const core = await fetchEcosystem(corePk)
+    assert(core.isActor(B.chain.getMyPublicKey()), 'B should now be an actor')
+  })
+
+  await step('A sets herself as an unlimited payer of the core ecosystem', async () => {
+    const tx = A.chain.setPayer(A.sk, corePk, A.chain.getMyPublicKey(), -1)
+    await sendEcosystemTx(A, corePk, tx)
+    const core = await fetchEcosystem(corePk)
+    assert(core.isPayer(A.chain.getMyPublicKey()), 'A should now be a payer')
+  })
+
   const PAPER_AMOUNT = 2
   let paperTx
 
-  await step(`A generates a ${PAPER_AMOUNT}-unit paper`, async () => {
+  await step(`A generates a ${PAPER_AMOUNT}-unit paper targeting the core ecosystem`, async () => {
     assert(A.chain.getAvailableMoneyAmount() >= PAPER_AMOUNT, 'A has insufficient funds for the test paper')
-    paperTx = A.chain.generatePaper(A.sk, PAPER_AMOUNT, server.serverPk)
+    paperTx = A.chain.generatePaper(A.sk, PAPER_AMOUNT, corePk)
   })
 
   await step("save A's block after generating the paper", async () => {
@@ -318,9 +393,12 @@ async function main() {
     )
   })
 
-  await step('papers/cash is accepted (200)', async () => {
+  await step('papers/cash is accepted and credits the core ecosystem (200)', async () => {
     const { status, json } = await request('POST', '/papers/cash', { body: { tx: paperForB.export() } })
     assert(status === 200, `expected 200, got ${status}: ${JSON.stringify(json)}`)
+    const core = await fetchEcosystem(corePk)
+    const cashedInCore = core.lastblock.transactions.some((t) => t.type === 5 && t.signature === paperTx.signature)
+    assert(cashedInCore, "the core ecosystem's own chain should record the cashed paper")
   })
 
   await step("sign B's block (referent counter-signs the paper-cashing block)", async () => {
@@ -336,6 +414,51 @@ async function main() {
     const { status, json } = await request('POST', '/papers/cash', { body: { tx: paperForB.export() } })
     assert(status === 409, `expected 409, got ${status}: ${JSON.stringify(json)}`)
     assert(json?.code === 'ALREADY_CASHED', `expected code ALREADY_CASHED, got ${json?.code}`)
+  })
+
+  await step('A engages invests into the core ecosystem', async () => {
+    const tx = A.chain.engageInvests(A.sk, corePk, 1, 3) // 1/day for 3 days
+    await sendEcosystemTx(A, corePk, tx)
+    const core = await fetchEcosystem(corePk)
+    assert(core.invests.length >= 3, `expected at least 3 engaged invests, got ${core.invests.length}`)
+  })
+
+  let orderInvestIds
+  await step('A (payer) issues an order against those invests, targeting B', async () => {
+    const core = await fetchEcosystem(corePk)
+    orderInvestIds = core.invests.slice(0, 1)
+    const tx = A.chain.payerOrder(A.sk, corePk, B.chain.getMyPublicKey(), orderInvestIds)
+    await sendEcosystemTx(A, corePk, tx)
+  })
+
+  let orderEarnRaw
+  await step('the order executes immediately and B sees it queued — no separate claim step', async () => {
+    const { timestamp, headers } = timestampAuthHeaders(B.chain.getMyPublicKey(), B.sk)
+    const { status, json } = await request('GET', '/tx/list', {
+      headers,
+      query: { publickey: B.chain.getMyPublicKey(), timestamp },
+    })
+    assert(status === 200, `expected 200, got ${status}: ${JSON.stringify(json)}`)
+    assert(json.length === 1, `expected exactly 1 pending tx (the order payout), got ${JSON.stringify(json)}`)
+    assert(json[0].t === 13, `expected an EARN (13), got type ${json[0].t}`)
+    orderEarnRaw = json[0]
+  })
+
+  await step('B receives the order payout', async () => {
+    const experienceBeforeOrder = B.chain.experience
+    const rx = TransactionMaker.make(orderEarnRaw)
+    B.chain.receiveEarn(rx)
+    assert(B.chain.experience > experienceBeforeOrder, 'expected experience to increase from the order payout')
+    await saveBlock(B)
+  })
+
+  await step('A (admin) distributes the core ecosystem salary', async () => {
+    const authAuth = timestampAuthHeaders(A.chain.getMyPublicKey(), A.sk)
+    const { status, json } = await request('POST', `/ecosystems/${corePk}/distribute`, {
+      body: { publickey: A.chain.getMyPublicKey(), timestamp: authAuth.timestamp },
+      headers: authAuth.headers,
+    })
+    assert(status === 200, `expected 200, got ${status}: ${JSON.stringify(json)}`)
   })
 }
 
