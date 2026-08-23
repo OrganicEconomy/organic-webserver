@@ -3,11 +3,16 @@ import assert from 'node:assert'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { PROTOCOL_VERSION, type InfoResponse, type ServerListEntry } from 'organic-protocol'
-import { publicFromPrivate } from 'organic-money/src/index.js'
+import { CitizenBlockchain, EcosystemBlockchain, publicFromPrivate } from 'organic-money/src/index.js'
+import { Ecosystem } from '../app/models.js'
+import { encryptEcosystemKey } from '../app/utils/ecosystem-key.util.js'
 import app from '../app.js'
 
+const SECRETKEY = process.env.ORGANIC_SECRET_KEY as string
+
 describe('GET /api/v1/info', () => {
-    it('Should return the public identity card of the server.', async () => {
+    it('Should return null corePk when no core ecosystem exists yet.', async () => {
+        await Ecosystem.destroy({ where: {}, truncate: true })
         const res = await request(app)
             .get('/api/v1/info')
             .expect(200)
@@ -20,6 +25,22 @@ describe('GET /api/v1/info', () => {
         assert.strictEqual(typeof info.name, 'string')
         assert.ok(info.name.length > 0)
         assert.strictEqual(typeof info.stats.users, 'number')
+    });
+
+    it('Should return the core ecosystem pk once one exists.', async () => {
+        await Ecosystem.destroy({ where: {}, truncate: true })
+        const adminBc = new CitizenBlockchain()
+        const adminSk = adminBc.startBlockchain("CoreAdmin", new Date(), SECRETKEY)
+        const eco = new EcosystemBlockchain()
+        const ecoSk = eco.makeBirthBlock(null, adminBc.getMyPublicKey(), "Core")
+        eco.validateAccount(ecoSk)
+        await Ecosystem.create({
+            publickey: eco.getMyPublicKey(), name: "Core", blocks: eco.export(),
+            ecosk: await encryptEcosystemKey(ecoSk), iscore: true, validatorpk: adminBc.getMyPublicKey(),
+        })
+
+        const res = await request(app).get('/api/v1/info').expect(200)
+        assert.strictEqual(res.body.corePk, eco.getMyPublicKey())
     });
 
     it('Should count registered users in stats.', async () => {
