@@ -127,13 +127,14 @@ describe('GET /validations/:pk', () => {
 });
 
 describe('GET /validations/status/:pk', () => {
-    it('Should return the status of a known account, no auth required.', async () => {
-        const { pk } = await makePendingCandidate()
+    it('Should return the status and current blocks of a known account, no auth required.', async () => {
+        const { pk, bc } = await makePendingCandidate()
 
         const res = await request(app)
             .get(`/api/v1/validations/status/${pk}`)
             .expect(200)
         assert.equal(res.body.status, 'pending-validation')
+        assert.deepEqual(res.body.blocks, bc.export())
     });
 
     it('Should return 404 for an unknown pk.', async () => {
