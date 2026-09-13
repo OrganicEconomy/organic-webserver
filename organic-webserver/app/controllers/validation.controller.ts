@@ -50,7 +50,7 @@ export async function getValidationStatus(req: Request, res: Response): Promise<
         res.status(404).send()
         return
     }
-    res.send({ status: candidate.status })
+    res.send({ status: candidate.status, blocks: candidate.blocks })
 }
 
 /**
