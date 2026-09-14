@@ -24,8 +24,8 @@ const API = `${BASE}/api/v1`
 
 // ── low-level HTTP + crypto helpers (mirrors server-connection.service.ts) ──
 
-// PROTOCOL.md §9.6 keeps the API rate limiter on in dev/prod (8 req/min) —
-// this scenario alone makes more than 8 calls, so a real run against a real
+// PROTOCOL.md §9.6 keeps the API rate limiter on in dev/prod (30 req/min) —
+// this scenario alone makes more than 30 calls, so a real run against a real
 // server WILL get 429'd partway through. Rather than requiring the operator
 // to weaken a security control just to run a health-check script, back off
 // using the RateLimit-Reset header (seconds until the window clears) and

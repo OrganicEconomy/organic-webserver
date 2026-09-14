@@ -36,7 +36,7 @@ const isTest = process.env.NODE_ENV === 'test'
 
 const apiLimiter = rateLimit({
     windowMs: 60 * 1000,
-    max: 8,
+    max: 30,
     skip: () => isTest,
     standardHeaders: true,
     legacyHeaders: false,

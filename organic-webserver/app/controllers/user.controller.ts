@@ -180,7 +180,7 @@ export async function putSignAndSaveUser(req: Request, res: Response): Promise<v
             sendError(res, 409, "Submitted block does not chain onto the currently stored last block.");
             return
         }
-        newBlocks = signLastBlock(newBlocks)
+        newBlocks = await signLastBlock(newBlocks)
     } catch (err) {
         sendError(res, 500, `Error signing block for user pk=${publickey} : "${err}"`);
         return
