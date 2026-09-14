@@ -41,7 +41,7 @@ Tolerance: ±5 minutes. Requests outside this window, or with a bad signature, a
 | Route | Limit |
 |---|---|
 | `POST /users/login` | 10 requests / 15 min / IP |
-| All other routes | 8 requests / min / IP |
+| All other routes | 30 requests / min / IP |
 
 ---
 
