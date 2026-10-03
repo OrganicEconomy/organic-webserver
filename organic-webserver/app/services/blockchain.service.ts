@@ -10,6 +10,7 @@ export function validateBlockchain(blocks: BlockWire[]) {
     if (! blockchain.isWaitingValidation()) {
         throw new Error(`Given blockchain isn't made for validation :  ${blocks}`)
     }
+    blockchain.assertIsValid()
     blockchain.validateAccount(SECRETKEY)
     return blockchain.export()
 }
@@ -24,6 +25,7 @@ export function assertWaitingValidation(blocks: BlockWire[]): void {
     if (!blockchain.isWaitingValidation()) {
         throw new Error(`Given blockchain isn't made for validation :  ${blocks}`)
     }
+    blockchain.assertIsValid()
 }
 
 /**

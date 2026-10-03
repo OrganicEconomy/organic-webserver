@@ -1,7 +1,32 @@
 import assert from "assert";
 
 import { CitizenBlockchain, Blockchain } from 'organic-money/src/index.js';
-import { validateBlockchain, updateLastBlock, signLastBlock } from "../app/services/blockchain.service.js"
+import { validateBlockchain, updateLastBlock, signLastBlock, assertWaitingValidation } from "../app/services/blockchain.service.js"
+
+describe("assertWaitingValidation", function () {
+  it("should not throw for a well-formed, single-BirthBlock chain", () => {
+    const bc = new CitizenBlockchain()
+    bc.makeBirthBlock("Alice", new Date(1990, 4, 15))
+
+    assert.doesNotThrow(() => assertWaitingValidation(bc.export()))
+  });
+
+  it("should throw if the BirthBlock has an invalid transaction (e.g. an empty name)", () => {
+    const bc = new CitizenBlockchain()
+    bc.makeBirthBlock("", new Date(1990, 4, 15))
+
+    assert.throws(() => assertWaitingValidation(bc.export()))
+  });
+});
+
+describe("validateBlockchain", function () {
+  it("should throw if the BirthBlock has an invalid transaction (e.g. an empty name), even for the bootstrap account", () => {
+    const bc = new CitizenBlockchain()
+    bc.makeBirthBlock("", new Date(1990, 4, 15))
+
+    assert.throws(() => validateBlockchain(bc.export()))
+  });
+});
 
 const sk = "ed945716dddb7af2c9774939e9946f1fee31f5ec0a3c6ec96059f119c396912f"
 const pk = "02c85e4e448d67a8dc724c620f3fe7d2a3a3cce9fe905b918f712396b4f8effcb3"
