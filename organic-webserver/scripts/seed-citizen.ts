@@ -14,6 +14,7 @@ type Citizen = InstanceType<typeof CitizenBlockchain>
 
 const BIRTHDATE = new Date(Date.UTC(1990, 0, 1))
 const DAYS_PER_BLOCK = 30
+const MAX_LEVEL = 20
 
 function toKeyAndValue(arg: string): [string, string] {
     const [, key, value] = /^--([\w-]+)=(.*)$/.exec(arg) ?? []
@@ -25,6 +26,7 @@ export function parseSeedArgs(args: string[]): SeedOptions {
     const level = Number(options.level)
     if (!options.name) throw new Error('--name is required, e.g. --name=Jonnhy')
     if (!Number.isInteger(level) || level < 1) throw new Error('--level must be a positive integer, e.g. --level=20')
+    if (level > MAX_LEVEL) throw new Error(`--level cannot exceed ${MAX_LEVEL}: unspent invests pile up in every block, beyond that the account can no longer be saved`)
     return {
         name: options.name,
         mail: options.mail ?? `${options.name.toLowerCase()}@mail.com`,

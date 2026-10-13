@@ -119,4 +119,8 @@ describe('parseSeedArgs', () => {
     it('should require a positive integer level', () => {
         assert.throws(() => parseSeedArgs(['--name=Alice', '--level=zero']), /--level must be a positive integer/)
     });
+
+    it('should refuse a level above 20', () => {
+        assert.throws(() => parseSeedArgs(['--name=Alice', '--level=21']), /--level cannot exceed 20/)
+    });
 });
