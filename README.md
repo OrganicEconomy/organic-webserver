@@ -52,26 +52,33 @@ On windows
 npm run wintest
 ```
 
-### Seed a test account with real history
+### Seed a test account at a given level
 
-Creates one account directly in the database, with `--days` of genuinely
-backdated activity (daily money creation + occasional self-pay) — useful to
-manually test the webapp against something richer than a freshly registered
-empty account. All seeded accounts share the password `a`.
+Creates one account directly in the database, already at `--level`, with a
+genuinely backdated history (daily money creation, all of it self-paid, one
+block closed every 30 days) — useful to let testers try the app without
+waiting for days. Today's money is left available to spend.
 
 On unix
 ```bash
-npm run seed -- --name=Jonnhy --days=30
+npm run seed -- --name=Jonnhy --level=20
 ```
 
 On windows
 ```bash
-npm run winseed -- --name=Jonnhy --days=30
+npm run winseed -- --name=Jonnhy --level=20
 ```
 
-The script prints the generated email once done — log into the webapp with
-it via "Restaurer mon compte" (mot de passe `a`). Run it again (any name) to
-create another account; each call only ever creates one.
+On a deployed server (from the server folder, with its `.env`)
+```bash
+npm run seed:server -- --name=Alice --mail=alice@example.org --password=secret --level=20
+```
+
+`--level` is capped at 20: unspent invests are carried over in every block, so
+beyond that the last block outgrows the server's request size limit. `--mail`
+defaults to `<name>@mail.com` and `--password` to `a`; a mail already in the
+database is refused. Log into the webapp with them via "Restaurer mon
+compte". Each call creates one account.
 
 ## For developpers
 
