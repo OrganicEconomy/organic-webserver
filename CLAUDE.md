@@ -18,7 +18,7 @@ npm run server       # or: npm run winserver
 npm test             # mocha, test/ ; or: npm run wintest
 npm run build        # tsc --noEmit
 npm run e2e          # scenario/e2e-solo.mjs against a running server
-npm run seed -- --name=Alice --days=30   # or winseed ; seeded password is "a"
+npm run seed -- --name=Alice --level=20 [--mail=alice@x.fr] [--password=secret]   # or winseed ; seed:server on the VPS
 ```
 
 Before pushing, the full test suite and `npm run build` must pass.
