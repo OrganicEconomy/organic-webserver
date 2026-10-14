@@ -26,7 +26,7 @@ export function parseSeedArgs(args: string[]): SeedOptions {
     const level = Number(options.level)
     if (!options.name) throw new Error('--name is required, e.g. --name=Jonnhy')
     if (!Number.isInteger(level) || level < 1) throw new Error('--level must be a positive integer, e.g. --level=20')
-    if (level > MAX_LEVEL) throw new Error(`--level cannot exceed ${MAX_LEVEL}: unspent invests pile up in every block, beyond that the account can no longer be saved`)
+    if (level > MAX_LEVEL) throw new Error(`--level cannot exceed ${MAX_LEVEL}: the whole history is downloaded and replayed at every restore and cross-verification, beyond that it gets too slow`)
     return {
         name: options.name,
         mail: options.mail ?? `${options.name.toLowerCase()}@mail.com`,

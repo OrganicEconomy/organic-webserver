@@ -74,8 +74,8 @@ On a deployed server (from the server folder, with its `.env`)
 npm run seed:server -- --name=Alice --mail=alice@example.org --password=secret --level=20
 ```
 
-`--level` is capped at 20: unspent invests are carried over in every block, so
-beyond that the last block outgrows the server's request size limit. `--mail`
+`--level` is capped at 20: the whole history (~0.5 MB at level 20, ~2.6 MB at
+level 40) is downloaded and replayed at every restore and cross-verification. `--mail`
 defaults to `<name>@mail.com` and `--password` to `a`; a mail already in the
 database is refused. Log into the webapp with them via "Restaurer mon
 compte". Each call creates one account.
