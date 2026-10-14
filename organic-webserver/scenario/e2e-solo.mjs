@@ -267,8 +267,12 @@ async function main() {
   })
 
   await step("A's daily money creation catches up the 9 missed days in one call", async () => {
-    const created = A.chain.createMoneyAndInvests(A.sk)
-    assert(created !== null, 'expected a CreateTransaction, got null')
+    const transactions = A.chain.createMoneyAndInvests(A.sk)
+    assert(
+      transactions.length === 1,
+      `expected a single CREATE (no missed day is expired yet), got ${transactions.length} transactions`
+    )
+    const [created] = transactions
     assert(
       created.money.length > 1,
       `expected multiple days caught up in one call, got ${created.money.length} — ` +
