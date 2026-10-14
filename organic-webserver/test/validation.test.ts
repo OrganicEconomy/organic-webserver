@@ -2,7 +2,7 @@ import request from 'supertest';
 import app from "../app.js";
 import assert from "assert";
 import { User, Ecosystem } from "../app/models.js";
-import { CitizenBlockchain, EcosystemBlockchain, BlockMaker, signHash, hashTimestampAuth } from 'organic-money/src/index.js';
+import { CitizenBlockchain, EcosystemBlockchain, BlockMaker, signHash, hashTimestampAuth, publicFromPrivate } from 'organic-money/src/index.js';
 import { encryptEcosystemKey } from '../app/utils/ecosystem-key.util.js';
 
 const SECRETKEY = process.env.ORGANIC_SECRET_KEY as string
@@ -251,5 +251,24 @@ describe('POST /validations/:pk/reject', () => {
         const user = await User.findOne({ where: { publickey: pk } }) as any
         assert.ok(user, "row must still exist")
         assert.equal(user.status, 'rejected')
+    });
+
+    it('Should not let a non-admin authenticated in the query reject in the name of an admin.', async () => {
+        await Ecosystem.destroy({ where: {}, truncate: true })
+        const { adminPk } = await makeCoreWithAdmin()
+        const { pk } = await makePendingCandidate()
+        const strangerSk = "2222222222222222222222222222222222222222222222222222222222222222"
+        const strangerPk = publicFromPrivate(strangerSk)
+        const { ts, sig } = timestampAuth(strangerPk, strangerSk)
+
+        await request(app)
+            .post(`/api/v1/validations/${pk}/reject`)
+            .query({ publickey: strangerPk, timestamp: ts })
+            .set('x-signature', sig)
+            .send({ publickey: adminPk })
+            .expect(401)
+
+        const user = await User.findOne({ where: { publickey: pk } }) as any
+        assert.equal(user.status, 'pending-validation')
     });
 });

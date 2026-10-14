@@ -283,6 +283,26 @@ describe('POST /users/password', () => {
         assert.equal(user.secretkey, "encrypted-with-new-password")
         assert.ok(await bcrypt.compare("newpassword", user.password))
     });
+
+    it("Should not let an attacker authenticated in the query change someone else's password.", async () => {
+        await User.destroy({ where: {}, truncate: true })
+        const victim = await registerUser()
+        const attackerSk = "1111111111111111111111111111111111111111111111111111111111111111"
+        const attackerPk = publicFromPrivate(attackerSk)
+
+        const ts = Math.floor(Date.now() / 1000)
+        const sig = signHash(hashTimestampAuth(attackerPk, ts), attackerSk)
+
+        await request(app)
+            .post('/api/users/password')
+            .query({ publickey: attackerPk, timestamp: ts })
+            .set('x-signature', sig)
+            .send({ publickey: victim.pk, newpassword: "hacked", secretkey: "garbage" })
+            .expect(401)
+
+        const user = await User.findOne({ where: { publickey: victim.pk } }) as any
+        assert.equal(user.secretkey, "encrypted-with-old-password")
+    });
 });
 
 describe('PUT /users/save', () => {

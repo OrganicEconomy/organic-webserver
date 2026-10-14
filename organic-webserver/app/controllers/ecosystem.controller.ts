@@ -6,7 +6,7 @@ import type { EcosystemCreateResponse, EcosystemInfoResponse } from 'organic-pro
 
 /** POST /ecosystems — timestamp-auth as the founding citizen (see EcosystemCreateBody). */
 export async function postCreateEcosystem(req: Request, res: Response): Promise<void> {
-    const founderPk = req.body?.publickey
+    const founderPk = res.locals.authenticatedPk as string
     const name = req.body?.name
     if (!founderPk || !name) {
         sendError(res, 400, "Fields 'founderPk' and 'name' are needed.")
@@ -70,7 +70,7 @@ export async function getEcosystemInfo(req: Request, res: Response): Promise<voi
 
 /** PUT /ecosystems/:pk/meta — timestamp-auth, caller must be an admin of :pk. */
 export async function putEcosystemMeta(req: Request, res: Response): Promise<void> {
-    const publickey = req.body?.publickey
+    const publickey = res.locals.authenticatedPk as string
     const pk = req.params.pk as string
 
     if (!(await isAdminOf(pk, publickey))) {

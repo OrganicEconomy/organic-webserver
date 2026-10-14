@@ -67,7 +67,7 @@ export async function postEcosystemTx(req: Request, res: Response): Promise<void
  * Each resulting EARN is routed exactly like a payer-order payout.
  */
 export async function postDistributeSalary(req: Request, res: Response): Promise<void> {
-    const publickey = req.body?.publickey
+    const publickey = res.locals.authenticatedPk as string
     const pk = req.params.pk as string
 
     const row = await Ecosystem.findOne({ where: { publickey: pk } }) as any
