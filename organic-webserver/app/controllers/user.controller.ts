@@ -204,11 +204,12 @@ export async function putSignAndSaveUser(req: Request, res: Response): Promise<v
  * bcrypt hash and the re-encrypted sk without ever reading either.
  */
 export async function postChangePassword(req: Request, res: Response): Promise<void> {
-    if (!req.body?.publickey || !req.body?.newpassword || !req.body?.secretkey) {
-        sendError(res, 400, "Fields 'publickey', 'newpassword' and 'secretkey' are needed.");
+    if (!req.body?.newpassword || !req.body?.secretkey) {
+        sendError(res, 400, "Fields 'newpassword' and 'secretkey' are needed.");
         return;
     }
-    const { publickey, newpassword, secretkey } = req.body
+    const publickey = res.locals.authenticatedPk as string
+    const { newpassword, secretkey } = req.body
 
     const user = await User.findOne({ where: { publickey } })
     if (!user) {

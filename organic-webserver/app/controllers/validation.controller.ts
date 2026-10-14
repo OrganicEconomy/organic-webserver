@@ -9,7 +9,7 @@ import type { ValidationListEntry } from 'organic-protocol'
  * for the "file d'attente" screen (Phase-2.md §4).
  */
 export async function listValidations(req: Request, res: Response): Promise<void> {
-    const publickey = (req.query.publickey ?? req.body?.publickey) as string
+    const publickey = res.locals.authenticatedPk as string
     if (!(await isCoreAdmin(publickey))) {
         sendError(res, 403, "Not a core admin", 'NOT_CORE_ADMIN')
         return
@@ -29,7 +29,7 @@ export async function listValidations(req: Request, res: Response): Promise<void
  * chain, for the admin's own device to reconstruct and call validateAccount() on.
  */
 export async function getValidation(req: Request, res: Response): Promise<void> {
-    const publickey = (req.query.publickey ?? req.body?.publickey) as string
+    const publickey = res.locals.authenticatedPk as string
     if (!(await isCoreAdmin(publickey))) {
         sendError(res, 403, "Not a core admin", 'NOT_CORE_ADMIN')
         return
@@ -60,7 +60,7 @@ export async function getValidationStatus(req: Request, res: Response): Promise<
  * core admin (identity ≠ membership).
  */
 export async function approveValidation(req: Request, res: Response): Promise<void> {
-    const publickey = req.body?.publickey
+    const publickey = res.locals.authenticatedPk as string
     const block = req.body?.block
     const targetPk = req.params.pk
 
@@ -93,7 +93,7 @@ export async function approveValidation(req: Request, res: Response): Promise<vo
 
 /** POST /validations/:pk/reject — core admins only. Row kept, marked rejected. */
 export async function rejectValidation(req: Request, res: Response): Promise<void> {
-    const publickey = req.body?.publickey
+    const publickey = res.locals.authenticatedPk as string
     const targetPk = req.params.pk
 
     if (!(await isCoreAdmin(publickey))) {

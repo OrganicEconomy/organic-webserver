@@ -25,6 +25,7 @@ export function requireBlockAuth(req: Request, res: Response, next: NextFunction
         return
     }
 
+    res.locals.authenticatedPk = publickey
     next()
 }
 
@@ -42,6 +43,11 @@ export function requireTimestampAuth(req: Request, res: Response, next: NextFunc
         return
     }
 
+    if (isClaimingTwoIdentities(req)) {
+        sendError(res, 401, "Query and body publickeys differ")
+        return
+    }
+
     const ts = parseInt(timestamp as string)
     if (isNaN(ts) || Math.abs(Date.now() / 1000 - ts) > TIMESTAMP_TOLERANCE_SECONDS) {
         sendError(res, 401, "Expired or invalid timestamp")
@@ -53,5 +59,12 @@ export function requireTimestampAuth(req: Request, res: Response, next: NextFunc
         return
     }
 
+    res.locals.authenticatedPk = publickey
     next()
+}
+
+function isClaimingTwoIdentities(req: Request): boolean {
+    const queryPk = req.query.publickey
+    const bodyPk = req.body?.publickey
+    return queryPk !== undefined && bodyPk !== undefined && queryPk !== bodyPk
 }
