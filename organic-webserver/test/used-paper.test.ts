@@ -2,7 +2,7 @@ import request from 'supertest';
 import app from "../app.js";
 import assert from "assert";
 import { UsedPaper, Ecosystem, User } from "../app/models.js";
-import { CitizenBlockchain, EcosystemBlockchain, publicFromPrivate } from 'organic-money/src/index.js';
+import { CitizenBlockchain, EcosystemBlockchain, BlockMaker, TransactionMaker, signHash, publicFromPrivate } from 'organic-money/src/index.js';
 import { randomPrivateKey } from 'organic-money/src/crypto.js';
 import { encryptEcosystemKey } from '../app/utils/ecosystem-key.util.js';
 
@@ -40,6 +40,44 @@ async function makeEcosystem(name: string) {
         ecosk: await encryptEcosystemKey(ecoSk), iscore: false, validatorpk: adminBc.getMyPublicKey(),
     })
     return eco.getMyPublicKey()
+}
+
+async function registerCasher() {
+    const bc = new CitizenBlockchain()
+    const sk = bc.startBlockchain("Casher", new Date(), SECRETKEY)
+    const pk = bc.getMyPublicKey()
+    await User.create({
+        mail: `${pk}@test.test`, password: "test", publickey: pk,
+        name: "Casher", secretkey: sk, blocks: bc.export(), devicetoken: "casher-device", status: 'active'
+    })
+    return { bc, sk, pk }
+}
+
+function makeForgedPaper(targetPk: string) {
+    const forger = new CitizenBlockchain()
+    const forgerSk = forger.makeBirthBlock("Forger", new Date(), null)
+    forger.validateAccount(forgerSk)
+    return forger.generatePaper(forgerSk, 1, targetPk)
+}
+
+function cashThroughSign(casher: { bc: InstanceType<typeof CitizenBlockchain>, sk: string, pk: string }, paper: any) {
+    casher.bc.cashPaper(TransactionMaker.make(paper.export()))
+    const block = casher.bc.lastblock.export()
+    return request(app)
+        .put('/api/users/sign')
+        .set('x-signature', signBlock(block, casher.sk))
+        .send({ publickey: casher.pk, block })
+}
+
+function signBlock(blockObj: object, sk: string) {
+    const block = BlockMaker.make(blockObj)
+    block.merkle()
+    return signHash(block.hash(), sk)
+}
+
+async function ecosystemMoney(ecoPk: string) {
+    const row = await Ecosystem.findOne({ where: { publickey: ecoPk } }) as any
+    return new EcosystemBlockchain(row.blocks).lastblock.money.length
 }
 
 // A real DER-encoded SECP256K1 signature (hex) — length varies with r/s
@@ -135,130 +173,132 @@ describe('GET /isCashed', () => {
     });
 });
 
-describe('POST /cashPaper', () => {
-    it('Should return json format.', (done) => {
-        request(app)
-            .post('/api/papers/cash')
-            .set('Accept', 'application/json')
-            .expect('Content-Type', /json/, done)
-    });
-
-    it('Should return 400 for missing tx.', (done) => {
-        request(app)
-            .post('/api/papers/cash')
-            .set('Accept', 'application/json')
-            .send({})
-            .expect(400, done)
-    });
-
-    it('Should return 400 INVALID_TX for a transaction with invalid crypto.', async () => {
-        const paper = makePaper()
-        const tampered = paper.export()
-        tampered.d = tampered.d + 1 // mutate after signing: signature no longer matches
-
-        const res = await request(app)
-            .post('/api/papers/cash')
-            .send({ tx: tampered })
-            .expect(400)
-        assert.equal(res.body.code, 'INVALID_TX')
-    });
-
-    it('Should return 400 INVALID_TX when the transaction is not a PAPER.', async () => {
-        const bc = new CitizenBlockchain()
-        const sk = bc.startBlockchain("Payer", new Date(), SECRETKEY)
-        const bc2 = new CitizenBlockchain()
-        bc2.startBlockchain("Receiver", new Date(), SECRETKEY)
-        const transaction = bc.pay(sk, bc2.getMyPublicKey(), 1)
-
-        const res = await request(app)
-            .post('/api/papers/cash')
-            .send({ tx: transaction.export() })
-            .expect(400)
-        assert.equal(res.body.code, 'INVALID_TX')
-    });
-
-    it('Should register the hash and return 200 for a valid, uncashed paper.', async () => {
+describe('POST /papers/cash', () => {
+    it('Should no longer exist: papers are cashed through PUT /users/sign only.', async () => {
         const paper = await makeSavedPaper()
-        const exported = paper.export()
-
-        await request(app)
-            .post('/api/papers/cash')
-            .send({ tx: exported })
-            .expect(200)
-
-        const stored = await UsedPaper.findOne({ where: { hash: exported.h } })
-        assert.ok(stored, "the paper's hash (tx.h) should be registered as used")
-    });
-
-    it('Should return 409 ALREADY_CASHED for a paper already registered.', async () => {
-        const paper = await makeSavedPaper()
-        const exported = paper.export()
-
-        await request(app).post('/api/papers/cash').send({ tx: exported }).expect(200)
-
-        const res = await request(app)
-            .post('/api/papers/cash')
-            .send({ tx: exported })
-            .expect(409)
-        assert.equal(res.body.code, 'ALREADY_CASHED')
-    });
-
-    it("Should apply the paper's money to the target ecosystem's own chain when it is a known ecosystem.", async () => {
-        const ecoPk = await makeEcosystem("Core2")
-        const paper = await makeSavedPaper(ecoPk)
-
         await request(app)
             .post('/api/papers/cash')
             .send({ tx: paper.export() })
-            .expect(200)
-
-        const row = await Ecosystem.findOne({ where: { publickey: ecoPk } }) as any
-        const reloaded = new EcosystemBlockchain(row.blocks)
-        const cashedPaperTxs = reloaded.lastblock.transactions.filter((t: any) => t.type === 5)
-        assert.equal(cashedPaperTxs.length, 1, "the ecosystem's own chain should record the cashed paper")
+            .expect(404)
     });
+});
 
-    it('Should return 403 UNKNOWN_SENDER and credit nothing for a paper signed by an unregistered key.', async () => {
-        const ecoPk = await makeEcosystem("Core3")
-        const forger = new CitizenBlockchain()
-        const forgerSk = forger.makeBirthBlock("Forger", new Date(), null)
-        forger.validateAccount(forgerSk)
-        const forgedPaper = forger.generatePaper(forgerSk, 1, ecoPk)
+describe('PUT /users/sign (cashing papers)', () => {
+    it('Should refuse to cash a paper signed by an unregistered key, and credit nothing.', async () => {
+        const ecoPk = await makeEcosystem("Forged")
+        const casher = await registerCasher()
+        const forgedPaper = makeForgedPaper(ecoPk)
 
-        const res = await request(app)
-            .post('/api/papers/cash')
-            .send({ tx: forgedPaper.export() })
-            .expect(403)
+        const res = await cashThroughSign(casher, forgedPaper).expect(403)
         assert.equal(res.body.code, 'UNKNOWN_SENDER')
 
         assert.equal(await UsedPaper.findOne({ where: { hash: forgedPaper.signature } }), null)
-        const row = await Ecosystem.findOne({ where: { publickey: ecoPk } }) as any
-        assert.equal(new EcosystemBlockchain(row.blocks).lastblock.money.length, 0)
+        assert.equal(await ecosystemMoney(ecoPk), 0)
+        const user = await User.findOne({ where: { publickey: casher.pk } }) as any
+        assert.equal(user.blocks.length, 2, "the block holding the forged paper must not be saved")
     });
 
-    it("Should return 404 TX_NOT_IN_CHAIN for a paper missing from its issuer's saved chain.", async () => {
-        const ecoPk = await makeEcosystem("Core4")
-        const bc = new CitizenBlockchain()
-        const sk = bc.startBlockchain("Issuer", new Date(), SECRETKEY)
+    it("Should refuse to cash a paper missing from its issuer's saved chain.", async () => {
+        const ecoPk = await makeEcosystem("Unsaved")
+        const casher = await registerCasher()
+        const issuer = new CitizenBlockchain()
+        const issuerSk = issuer.startBlockchain("Issuer", new Date(), SECRETKEY)
         await User.create({
-            mail: `${bc.getMyPublicKey()}@test.test`, password: "test", publickey: bc.getMyPublicKey(),
-            name: "Issuer", secretkey: sk, blocks: bc.export(), status: 'active'
+            mail: `${issuer.getMyPublicKey()}@test.test`, password: "test", publickey: issuer.getMyPublicKey(),
+            name: "Issuer", secretkey: issuerSk, blocks: issuer.export(), status: 'active'
         })
-        const unsavedPaper = bc.generatePaper(sk, 1, ecoPk)
+        const unsavedPaper = issuer.generatePaper(issuerSk, 1, ecoPk)
 
-        const res = await request(app)
-            .post('/api/papers/cash')
-            .send({ tx: unsavedPaper.export() })
-            .expect(404)
+        const res = await cashThroughSign(casher, unsavedPaper).expect(404)
         assert.equal(res.body.code, 'TX_NOT_IN_CHAIN')
     });
 
-    it('Should still register the hash only (legacy behavior) when the paper targets an unknown pk.', async () => {
-        // The referent is just a random pk, not a registered Ecosystem row — this must not throw.
-        const paper = await makeSavedPaper()
+    it('Should register a legitimate paper in the name of its casher, credit the ecosystem and sign with its key.', async () => {
+        const ecoPk = await makeEcosystem("Legit")
+        const casher = await registerCasher()
+        const paper = await makeSavedPaper(ecoPk)
+
+        await cashThroughSign(casher, paper).expect(200)
+
+        const usedPaper = await UsedPaper.findOne({ where: { hash: paper.signature } }) as any
+        assert.equal(usedPaper.casher, casher.pk)
+        assert.equal(await ecosystemMoney(ecoPk), 1)
+        const user = await User.findOne({ where: { publickey: casher.pk } }) as any
+        assert.equal(user.blocks[0].s, ecoPk)
+    });
+
+    it('Should refuse a paper already cashed by another citizen (a photographed paper).', async () => {
+        const ecoPk = await makeEcosystem("Photographed")
+        const paper = await makeSavedPaper(ecoPk)
+        await cashThroughSign(await registerCasher(), paper).expect(200)
+        const photographer = await registerCasher()
+
+        const res = await cashThroughSign(photographer, paper).expect(409)
+        assert.equal(res.body.code, 'ALREADY_CASHED')
+
+        assert.equal(await ecosystemMoney(ecoPk), 1)
+        const user = await User.findOne({ where: { publickey: photographer.pk } }) as any
+        assert.equal(user.blocks.length, 2)
+    });
+
+    it('Should cash a second paper added to the same open block as a first one already cashed by this citizen.', async () => {
+        const ecoPk = await makeEcosystem("SecondPaper")
+        const casher = await registerCasher()
+        await cashThroughSign(casher, await makeSavedPaper(ecoPk)).expect(200)
+        const secondPaper = await makeSavedPaper(ecoPk)
+
+        await cashThroughSign(casher, secondPaper).expect(200)
+
+        const usedPaper = await UsedPaper.findOne({ where: { hash: secondPaper.signature } }) as any
+        assert.equal(usedPaper.casher, casher.pk)
+        assert.equal(await ecosystemMoney(ecoPk), 2)
+    });
+
+    it('Should still let the casher save a longer unsigned version of the block the server signed.', async () => {
+        const ecoPk = await makeEcosystem("LongerVersion")
+        const casher = await registerCasher()
+        await cashThroughSign(casher, await makeSavedPaper(ecoPk)).expect(200)
+
+        const payer = new CitizenBlockchain()
+        const payerSk = payer.startBlockchain("Payer", new Date(), SECRETKEY)
+        casher.bc.receivePay(payer.pay(payerSk, casher.pk, 1))
+        const longerBlock = casher.bc.lastblock.export()
+
         await request(app)
-            .post('/api/papers/cash')
-            .send({ tx: paper.export() })
+            .put('/api/users/save')
+            .set('x-signature', signBlock(longerBlock, casher.sk))
+            .send({ publickey: casher.pk, block: longerBlock, devicetoken: "casher-device" })
             .expect(200)
+
+        const user = await User.findOne({ where: { publickey: casher.pk } }) as any
+        assert.deepEqual(user.blocks[0], longerBlock)
+    });
+
+    it('Should refuse to save a block holding a paper that was never cashed through sign.', async () => {
+        const ecoPk = await makeEcosystem("SavedOnly")
+        const casher = await registerCasher()
+        casher.bc.cashPaper(TransactionMaker.make(makeForgedPaper(ecoPk).export()))
+        const block = casher.bc.lastblock.export()
+
+        await request(app)
+            .put('/api/users/save')
+            .set('x-signature', signBlock(block, casher.sk))
+            .send({ publickey: casher.pk, block, devicetoken: "casher-device" })
+            .expect(400)
+
+        const user = await User.findOne({ where: { publickey: casher.pk } }) as any
+        assert.equal(user.blocks.length, 2)
+    });
+
+    it('Should register none of the papers of a block when one of them is refused.', async () => {
+        const ecoPk = await makeEcosystem("Atomic")
+        const casher = await registerCasher()
+        const legitPaper = await makeSavedPaper(ecoPk)
+        casher.bc.cashPaper(TransactionMaker.make(legitPaper.export()))
+
+        await cashThroughSign(casher, makeForgedPaper(ecoPk)).expect(403)
+
+        assert.equal(await UsedPaper.findOne({ where: { hash: legitPaper.signature } }), null)
+        assert.equal(await ecosystemMoney(ecoPk), 0)
     });
 });

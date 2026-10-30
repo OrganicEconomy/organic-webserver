@@ -397,16 +397,11 @@ async function main() {
     )
   })
 
-  await step('papers/cash is accepted and credits the core ecosystem (200)', async () => {
-    const { status, json } = await request('POST', '/papers/cash', { body: { tx: paperForB.export() } })
-    assert(status === 200, `expected 200, got ${status}: ${JSON.stringify(json)}`)
+  await step("sign B's block: the server cashes the paper and the core ecosystem counter-signs", async () => {
+    await signBlock(B)
     const core = await fetchEcosystem(corePk)
     const cashedInCore = core.lastblock.transactions.some((t) => t.type === 5 && t.signature === paperTx.signature)
     assert(cashedInCore, "the core ecosystem's own chain should record the cashed paper")
-  })
-
-  await step("sign B's block (referent counter-signs the paper-cashing block)", async () => {
-    await signBlock(B)
   })
 
   await step('paper is now cashed (200)', async () => {
@@ -414,10 +409,9 @@ async function main() {
     assert(status === 200, `expected 200, got ${status}`)
   })
 
-  await step('re-cashing the same paper is rejected (409 ALREADY_CASHED)', async () => {
-    const { status, json } = await request('POST', '/papers/cash', { body: { tx: paperForB.export() } })
-    assert(status === 409, `expected 409, got ${status}: ${JSON.stringify(json)}`)
-    assert(json?.code === 'ALREADY_CASHED', `expected code ALREADY_CASHED, got ${json?.code}`)
+  await step('papers/cash no longer exists (404)', async () => {
+    const { status } = await request('POST', '/papers/cash', { body: { tx: paperForB.export() } })
+    assert(status === 404, `expected 404, got ${status}`)
   })
 
   await step('A engages invests into the core ecosystem', async () => {
