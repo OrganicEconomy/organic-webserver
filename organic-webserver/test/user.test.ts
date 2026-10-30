@@ -552,6 +552,22 @@ describe('PUT /users/save', () => {
         assert.deepEqual(user.blocks[0], savedBlock)
     });
 
+    it('Should refuse a block chaining onto nothing while the stored last block is still open.', async () => {
+        const bc = new CitizenBlockchain()
+        const sk = bc.startBlockchain("Payer", new Date(), SECRETKEY)
+        const pk = bc.getMyPublicKey()
+        bc.pay(sk, TEST_PK, 1)
+        await registerActiveCitizen(bc, sk)
+
+        const orphanBlock: BlockWire = { ...bc.lastblock.export(), p: null }
+
+        await request(app)
+            .put('/api/users/save')
+            .set('x-signature', signBlock(orphanBlock, sk))
+            .send({ publickey: pk, block: orphanBlock, devicetoken: "current-device" })
+            .expect(409)
+    });
+
     it('Should refuse a block that makes the chain invalid.', async () => {
         const bc = new CitizenBlockchain()
         const sk = bc.startBlockchain("Payer", new Date(), SECRETKEY)

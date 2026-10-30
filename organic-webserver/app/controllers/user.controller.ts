@@ -132,14 +132,7 @@ export async function putSaveUser(req: Request, res: Response): Promise<void> {
         return
     }
 
-    let update
-    try {
-        update = updateLastBlock(user.blocks, lastblock)
-    } catch (err) {
-        sendError(res, 500, `Error updating User with pk=${publickey} : "${err}"`);
-        return
-    }
-
+    const update = updateLastBlock(user.blocks, lastblock)
     if ('failure' in update) {
         sendBlockUpdateError(res, update.failure)
         return
@@ -189,13 +182,14 @@ export async function putSignAndSaveUser(req: Request, res: Response): Promise<v
         return
     }
 
+    const update = updateLastBlock(user.blocks, lastblock)
+    if ('failure' in update) {
+        sendBlockUpdateError(res, update.failure)
+        return
+    }
+
     let newBlocks
     try {
-        const update = updateLastBlock(user.blocks, lastblock)
-        if ('failure' in update) {
-            sendBlockUpdateError(res, update.failure)
-            return
-        }
         newBlocks = await signLastBlock(update.blocks)
     } catch (err) {
         sendError(res, 500, `Error signing block for user pk=${publickey} : "${err}"`);
