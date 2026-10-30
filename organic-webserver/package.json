@@ -23,6 +23,9 @@
     "seed": "NODE_ENV=dev node --env-file=../.env.dev --import tsx scripts/seed-test-accounts.ts",
     "winseed": "SET NODE_ENV=dev& node --env-file=../.env.dev --import tsx scripts/seed-test-accounts.ts",
     "seed:server": "node --env-file=.env --import tsx scripts/seed-test-accounts.ts",
+    "reset-accounts": "NODE_ENV=dev node --env-file=../.env.dev --import tsx scripts/reset-test-accounts.ts",
+    "winreset-accounts": "SET NODE_ENV=dev& node --env-file=../.env.dev --import tsx scripts/reset-test-accounts.ts",
+    "reset-accounts:server": "node --env-file=.env --import tsx scripts/reset-test-accounts.ts",
     "e2e": "node --import tsx scenario/e2e-solo.mjs",
     "wine2e": "node --import tsx scenario/e2e-solo.mjs",
     "build": "tsc --noEmit"

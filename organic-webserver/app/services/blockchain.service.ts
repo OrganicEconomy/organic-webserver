@@ -1,5 +1,5 @@
 import { Blockchain, CitizenBlockchain, BlockMaker, TransactionMaker, publicFromPrivate } from 'organic-money/src/index.js';
-import type { BlockWire, TxWire } from 'organic-protocol'
+import { BlockType, type BlockWire, type TxWire } from 'organic-protocol'
 import { Ecosystem } from '../models.js'
 import { decryptEcosystemKey } from '../utils/ecosystem-key.util.js'
 
@@ -28,28 +28,57 @@ export function assertWaitingValidation(blocks: BlockWire[]): void {
     blockchain.assertIsValid()
 }
 
+export type BlockUpdateFailure = 'invalid-block' | 'not-chaining'
+
+export type BlockUpdate = { blocks: BlockWire[] } | { failure: BlockUpdateFailure }
+
 /**
  * Applies a client-submitted block to the stored chain: either an update of
  * the current last block (same previousHash — more transactions, or newly
  * signed), or a genuinely new block chained onto it (previousHash equals the
- * current last block's own signature). Returns null if neither holds — the
+ * current last block's own signature). 'not-chaining' if neither holds — the
  * submitted block does not chain onto what the server has, meaning one or
  * more blocks were closed locally without ever being saved in between (a
  * gap), rather than silently accepting a chain with a hole in it.
  */
-export function updateLastBlock(blocks: BlockWire[], lastblock: BlockWire) {
+export function updateLastBlock(blocks: BlockWire[], lastblock: BlockWire): BlockUpdate {
+    if (lastblock.t !== BlockType.CITIZEN) {
+        return { failure: 'invalid-block' }
+    }
+
     const madeLastblock = BlockMaker.make(lastblock)
 
     const blockchain = new CitizenBlockchain(blocks)
 
     if (blockchain.lastblock.previousHash === madeLastblock.previousHash) {
+        if (!keepsEveryTransaction(blocks[0], lastblock)) {
+            return { failure: 'invalid-block' }
+        }
         blockchain.blocks[0] = madeLastblock
     } else if (madeLastblock.previousHash === blockchain.lastblock.signature) {
         blockchain.addBlock(madeLastblock)
     } else {
-        return null
+        return { failure: 'not-chaining' }
     }
-    return blockchain.export()
+
+    if (!isValidChain(blockchain)) {
+        return { failure: 'invalid-block' }
+    }
+    return { blocks: blockchain.export() }
+}
+
+function isValidChain(blockchain: InstanceType<typeof CitizenBlockchain>): boolean {
+    try {
+        blockchain.assertIsValid()
+        return true
+    } catch {
+        return false
+    }
+}
+
+function keepsEveryTransaction(savedBlock: BlockWire, newVersion: BlockWire): boolean {
+    const newHashes = new Set(newVersion.x.map(tx => tx.h))
+    return savedBlock.x.every(tx => newHashes.has(tx.h))
 }
 
 /**

@@ -80,6 +80,25 @@ defaults to `<name>@mail.com` and `--password` to `a`; a mail already in the
 database is refused. Log into the webapp with them via "Restaurer mon
 compte". Each call creates one account.
 
+### Reset the test accounts
+
+Wipes a test server and gives every tester a fresh account at `--level` (20 by
+default), keeping their name and mail: every account, ecosystem, waiting
+transaction and cashed paper is deleted, each **active** account is recreated
+once per mail with a random password, and a new core ecosystem is created,
+administered by `--admin-mail` (who validates the next registrations).
+
+Without `--confirm` it only previews what it would do. On a deployed server
+(from the server folder, with its `.env`):
+```bash
+npm run reset-accounts:server -- --admin-mail=me@example.org
+npm run reset-accounts:server -- --admin-mail=me@example.org --confirm
+```
+
+It prints one `mail  password` line per account, to send to the testers: they
+log in with "Restaurer mon compte". Building the accounts takes ~10 s each at
+level 20, before anything is deleted.
+
 ## For developpers
 
 Models are in app/models, there are three:
