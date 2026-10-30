@@ -21,17 +21,25 @@ function toKeyAndValue(arg: string): [string, string] {
     return [key, value]
 }
 
-export function parseSeedArgs(args: string[]): SeedOptions {
-    const options = Object.fromEntries(args.map(toKeyAndValue))
-    const level = Number(options.level)
-    if (!options.name) throw new Error('--name is required, e.g. --name=Jonnhy')
+export function parseOptions(args: string[]): Record<string, string> {
+    return Object.fromEntries(args.map(toKeyAndValue))
+}
+
+export function parseLevel(value: string): number {
+    const level = Number(value)
     if (!Number.isInteger(level) || level < 1) throw new Error('--level must be a positive integer, e.g. --level=20')
     if (level > MAX_LEVEL) throw new Error(`--level cannot exceed ${MAX_LEVEL}: the whole history is downloaded and replayed at every restore and cross-verification, beyond that it gets too slow`)
+    return level
+}
+
+export function parseSeedArgs(args: string[]): SeedOptions {
+    const options = parseOptions(args)
+    if (!options.name) throw new Error('--name is required, e.g. --name=Jonnhy')
     return {
         name: options.name,
         mail: options.mail ?? `${options.name.toLowerCase()}@mail.com`,
         password: options.password ?? 'a',
-        level,
+        level: parseLevel(options.level),
     }
 }
 
@@ -122,13 +130,9 @@ async function assertMailIsFree(mail: string): Promise<void> {
     if (await User.count({ where: { mail } }) > 0) throw new Error(`Mail ${mail} is already used`)
 }
 
-export async function seedCitizen({ name, mail, password, level }: SeedOptions): Promise<Citizen> {
-    await sequelize.sync()
-    await assertMailIsFree(mail)
-
+export async function buildSeededUser({ name, mail, password, level }: SeedOptions) {
     const { citizen, citizenSk } = buildChainAtLevel(name, level)
-
-    await User.create({
+    const row = {
         publickey: citizen.getMyPublicKey(),
         name,
         mail,
@@ -138,6 +142,15 @@ export async function seedCitizen({ name, mail, password, level }: SeedOptions):
         birthdate: BIRTHDATE.toISOString().slice(0, 10),
         validatorpk: publicFromPrivate(serverSecretKey()),
         devicetoken: null,
-    })
+    }
+    return { row, citizen }
+}
+
+export async function seedCitizen(options: SeedOptions): Promise<Citizen> {
+    await sequelize.sync()
+    await assertMailIsFree(options.mail)
+
+    const { row, citizen } = await buildSeededUser(options)
+    await User.create(row)
     return citizen
 }
