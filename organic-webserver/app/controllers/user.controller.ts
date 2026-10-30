@@ -6,7 +6,7 @@ import bcrypt from 'bcryptjs'
 import type { BlockWire, MembershipStatus } from 'organic-protocol'
 import { publicFromPrivate } from 'organic-money/src/index.js'
 
-import { validateBlockchain, assertWaitingValidation, updateLastBlock, signLastBlock } from '../services/blockchain.service.js'
+import { validateBlockchain, assertWaitingValidation, updateLastBlock, signLastBlock, type BlockUpdateFailure } from '../services/blockchain.service.js'
 import { createEcosystem } from '../services/ecosystem.service.js'
 import { sendError } from '../utils/api-error.js'
 
@@ -116,7 +116,6 @@ export async function putSaveUser(req: Request, res: Response): Promise<void> {
 
     const publickey = req.body.publickey;
     const lastblock = req.body.block;
-    let blocks;
 
     const user = await User.findOne({ where: { publickey: publickey } }) as any;
 
@@ -133,17 +132,19 @@ export async function putSaveUser(req: Request, res: Response): Promise<void> {
         return
     }
 
+    let update
     try {
-        blocks = updateLastBlock(user.blocks, lastblock)
+        update = updateLastBlock(user.blocks, lastblock)
     } catch (err) {
         sendError(res, 500, `Error updating User with pk=${publickey} : "${err}"`);
         return
     }
 
-    if (blocks === null) {
-        sendError(res, 409, "Submitted block does not chain onto the currently stored last block.");
+    if ('failure' in update) {
+        sendBlockUpdateError(res, update.failure)
         return
     }
+    const blocks = update.blocks
 
     try {
         await User.update(
@@ -155,6 +156,16 @@ export async function putSaveUser(req: Request, res: Response): Promise<void> {
     } catch (err) {
         sendError(res, 500, `Error updating User with pk=${publickey} : "${err}"`);
     }
+}
+
+const BLOCK_UPDATE_ERRORS: Record<BlockUpdateFailure, { status: number, message: string }> = {
+    'invalid-block': { status: 400, message: "Submitted block is invalid." },
+    'not-chaining': { status: 409, message: "Submitted block does not chain onto the currently stored last block." },
+}
+
+function sendBlockUpdateError(res: Response, failure: BlockUpdateFailure): void {
+    const { status, message } = BLOCK_UPDATE_ERRORS[failure]
+    sendError(res, status, message)
 }
 
 export async function putSignAndSaveUser(req: Request, res: Response): Promise<void> {
@@ -173,14 +184,19 @@ export async function putSignAndSaveUser(req: Request, res: Response): Promise<v
         return
     }
 
+    if (user.status !== 'active') {
+        sendError(res, 403, "Only an active citizen can have a block signed.");
+        return
+    }
+
     let newBlocks
     try {
-        newBlocks = updateLastBlock(user.blocks, lastblock)
-        if (newBlocks === null) {
-            sendError(res, 409, "Submitted block does not chain onto the currently stored last block.");
+        const update = updateLastBlock(user.blocks, lastblock)
+        if ('failure' in update) {
+            sendBlockUpdateError(res, update.failure)
             return
         }
-        newBlocks = await signLastBlock(newBlocks)
+        newBlocks = await signLastBlock(update.blocks)
     } catch (err) {
         sendError(res, 500, `Error signing block for user pk=${publickey} : "${err}"`);
         return
