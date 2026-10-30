@@ -92,6 +92,20 @@ describe('POST /ecosystems/:pk/distribute', () => {
         assert.equal(res.body.code, 'NOT_CORE_ADMIN')
     });
 
+    it('Should not let a non-admin authenticated in the query distribute in the name of an admin.', async () => {
+        const { pk: adminPk } = await makeActiveCitizen("Admin1")
+        const ecoPk = await makeEcosystem(adminPk)
+        const { pk: strangerPk, sk: strangerSk } = await makeActiveCitizen("Stranger")
+        const { ts, sig } = timestampAuth(strangerPk, strangerSk)
+
+        await request(app)
+            .post(`/api/v1/ecosystems/${ecoPk}/distribute`)
+            .query({ publickey: strangerPk, timestamp: ts })
+            .set('x-signature', sig)
+            .send({ publickey: adminPk })
+            .expect(401)
+    });
+
     it('Should return 404 for an unknown ecosystem.', async () => {
         const { pk, sk } = await makeActiveCitizen("Admin2")
         const { ts, sig } = timestampAuth(pk, sk)

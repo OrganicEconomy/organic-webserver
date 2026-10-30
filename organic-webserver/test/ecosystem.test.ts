@@ -67,6 +67,22 @@ describe('POST /ecosystems', () => {
         assert.equal(res.body.code, 'UNKNOWN_USER')
     });
 
+    it('Should not let someone authenticated in the query create an ecosystem in the name of another citizen.', async () => {
+        await Ecosystem.destroy({ where: {}, truncate: true })
+        const victim = await makeActiveCitizen("Victim")
+        const stranger = await makeActiveCitizen("Stranger")
+        const strangerAuth = timestampAuth(stranger.pk, stranger.sk)
+
+        await request(app)
+            .post('/api/v1/ecosystems')
+            .query({ publickey: stranger.pk, timestamp: strangerAuth.ts })
+            .set('x-signature', strangerAuth.sig)
+            .send({ founderPk: victim.pk, name: "Spam" })
+            .expect(401)
+
+        assert.equal(await Ecosystem.count(), 0)
+    });
+
     it('Should create the ecosystem with the founder as admin, and make the first one the core.', async () => {
         await Ecosystem.destroy({ where: {}, truncate: true })
         const { pk, sk } = await makeActiveCitizen("Founder2")
@@ -213,5 +229,26 @@ describe('PUT /ecosystems/:pk/meta', () => {
         const row = await Ecosystem.findOne({ where: { publickey: created.body.publickey } }) as any
         assert.equal(row.description, "Torréfaction locale")
         assert.equal(row.name, "Café", "untouched fields should be unchanged")
+    });
+
+    it('Should not let a non-admin authenticated in the query edit in the name of an admin.', async () => {
+        await Ecosystem.destroy({ where: {}, truncate: true })
+        const { pk, sk } = await makeActiveCitizen("Founder9")
+        const auth = timestampAuth(pk, sk)
+        const created = await request(app).post('/api/v1/ecosystems').set('x-signature', auth.sig)
+            .send({ founderPk: pk, timestamp: auth.ts, name: "Café" }).expect(200)
+
+        const stranger = await makeActiveCitizen("Stranger")
+        const strangerAuth = timestampAuth(stranger.pk, stranger.sk)
+
+        await request(app)
+            .put(`/api/v1/ecosystems/${created.body.publickey}/meta`)
+            .query({ publickey: stranger.pk, timestamp: strangerAuth.ts })
+            .set('x-signature', strangerAuth.sig)
+            .send({ publickey: pk, name: "Hacked" })
+            .expect(401)
+
+        const row = await Ecosystem.findOne({ where: { publickey: created.body.publickey } }) as any
+        assert.equal(row.name, "Café")
     });
 });

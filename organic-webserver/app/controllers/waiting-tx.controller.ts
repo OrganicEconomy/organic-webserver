@@ -55,7 +55,7 @@ export async function createWaitingTx(req: Request, res: Response): Promise<void
 }
 
 export async function listWaitingTx(req: Request, res: Response): Promise<void> {
-    const publickey = req.query.publickey;
+    const publickey = res.locals.authenticatedPk as string
     const transactions = await WaitingTx.findAll({ where: { target: publickey } });
     // PROTOCOL.md §5.2: the response is a bare TxWire[] — hash/target/createdAt
     // are WaitingTx's own storage details, not part of the wire protocol.
