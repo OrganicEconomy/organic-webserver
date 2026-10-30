@@ -55,25 +55,16 @@ export function updateLastBlock(blocks: BlockWire[], lastblock: BlockWire): Bloc
             return { failure: 'invalid-block' }
         }
         blockchain.blocks[0] = madeLastblock
-    } else if (madeLastblock.previousHash === blockchain.lastblock.signature) {
+    } else if (blockchain.lastblock.isSigned() && madeLastblock.previousHash === blockchain.lastblock.signature) {
         blockchain.addBlock(madeLastblock)
     } else {
         return { failure: 'not-chaining' }
     }
 
-    if (!isValidChain(blockchain)) {
+    if (!blockchain.isValid()) {
         return { failure: 'invalid-block' }
     }
     return { blocks: blockchain.export() }
-}
-
-function isValidChain(blockchain: InstanceType<typeof CitizenBlockchain>): boolean {
-    try {
-        blockchain.assertIsValid()
-        return true
-    } catch {
-        return false
-    }
 }
 
 function keepsEveryTransaction(savedBlock: BlockWire, newVersion: BlockWire): boolean {
