@@ -1,8 +1,9 @@
 import type { Request, Response } from 'express'
 import { EcosystemBlockchain } from 'organic-money/src/index.js'
-import { User, Ecosystem } from '../models.js'
+import { Ecosystem } from '../models.js'
 import { sendError } from '../utils/api-error.js'
-import { isValidTransaction, loadValidChain, chainContainsTx } from '../services/blockchain.service.js'
+import { isValidTransaction } from '../services/blockchain.service.js'
+import { findCrossVerificationFailure, sendCrossVerificationError } from '../services/cross-verification.service.js'
 import { ecosystemTarget, receiveEcosystemTx, routeEarn } from '../services/ecosystem-tx.service.js'
 import { decryptEcosystemKey } from '../utils/ecosystem-key.util.js'
 
@@ -30,20 +31,9 @@ export async function postEcosystemTx(req: Request, res: Response): Promise<void
         return
     }
 
-    const sender = await User.findOne({ where: { publickey: tx.s } })
-    if (!sender) {
-        sendError(res, 403, "Sender is not a registered user.", 'UNKNOWN_SENDER')
-        return
-    }
-
-    const chain = loadValidChain((sender as any).blocks)
-    if (!chain) {
-        sendError(res, 400, "Sender's saved chain is invalid.", 'INVALID_CHAIN')
-        return
-    }
-
-    if (!chainContainsTx(chain, tx.h)) {
-        sendError(res, 404, "Transaction not found in sender's saved chain.", 'TX_NOT_IN_CHAIN')
+    const failure = await findCrossVerificationFailure(tx)
+    if (failure) {
+        sendCrossVerificationError(res, failure)
         return
     }
 
