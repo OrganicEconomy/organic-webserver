@@ -83,6 +83,29 @@ describe('POST /ecosystems/:pk/tx', () => {
         assert.equal(res.body.code, 'UNKNOWN_SENDER')
     });
 
+    it('Should return 403 UNKNOWN_SENDER when a pending account validated its own chain.', async () => {
+        const { pk: adminPk } = await makeActiveCitizen("Admin5")
+        const ecoPk = await makeEcosystem(adminPk)
+        const sybil = new CitizenBlockchain()
+        const sybilSk = sybil.makeBirthBlock("Sybil", new Date(), null)
+        sybil.validateAccount(sybilSk)
+        sybil.createMoneyAndInvests(sybilSk)
+        const tx = sybil.engageInvests(sybilSk, ecoPk, 1, 30)
+        await User.create({
+            mail: "sybil@test.test", password: "test", publickey: sybil.getMyPublicKey(),
+            name: "Sybil", secretkey: sybilSk, blocks: sybil.export(), status: 'pending-validation'
+        })
+
+        const res = await request(app)
+            .post(`/api/v1/ecosystems/${ecoPk}/tx`)
+            .send({ tx: tx.export() })
+            .expect(403)
+        assert.equal(res.body.code, 'UNKNOWN_SENDER')
+
+        const eco = await reload(ecoPk)
+        assert.equal(eco.invests.length, 0)
+    });
+
     it('Should return 404 TX_NOT_IN_CHAIN when the transaction was never saved.', async () => {
         const { bc, sk, pk } = await makeActiveCitizen("Citizen2")
         const ecoPk = await makeEcosystem(pk)

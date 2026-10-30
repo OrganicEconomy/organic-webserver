@@ -1,8 +1,9 @@
 import type { Request, Response } from 'express'
-import type { TxVerifyResponse } from 'organic-protocol'
+import { TxType, type BlockWire, type TxVerifyResponse, type TxWire } from 'organic-protocol'
 import { WaitingTx, User } from "../models.js";
-import { isValidTransaction, loadValidChain, chainContainsTx } from "../services/blockchain.service.js"
+import { isValidTransaction } from "../services/blockchain.service.js"
 import { sendError } from '../utils/api-error.js'
+import { findCrossVerificationFailure, sendCrossVerificationError, type CrossVerificationFailure } from '../services/cross-verification.service.js'
 
 /**
  * POST /tx/send — PROTOCOL.md §5.3, the security core of the phase.
@@ -23,20 +24,19 @@ export async function createWaitingTx(req: Request, res: Response): Promise<void
         return;
     }
 
-    const sender = await User.findOne({ where: { publickey: tx.s } });
-    if (!sender) {
-        sendError(res, 403, "Sender is not a registered user.", 'UNKNOWN_SENDER');
+    if (tx.t !== TxType.PAY) {
+        sendError(res, 400, "Only PAY transactions can be sent.", 'INVALID_TX');
         return;
     }
 
-    const chain = loadValidChain((sender as any).blocks)
-    if (!chain) {
-        sendError(res, 400, "Sender's saved chain is invalid.", 'INVALID_CHAIN');
-        return;
+    const failure = await findCrossVerificationFailure(tx)
+    if (failure) {
+        sendCrossVerificationError(res, failure)
+        return
     }
 
-    if (!chainContainsTx(chain, tx.h)) {
-        sendError(res, 404, "Transaction not found in sender's saved chain.", 'TX_NOT_IN_CHAIN');
+    if (await isAlreadySent(tx)) {
+        sendError(res, 409, "Transaction already sent.");
         return;
     }
 
@@ -52,6 +52,20 @@ export async function createWaitingTx(req: Request, res: Response): Promise<void
     } catch (err) {
         sendError(res, 500, (err as Error).message || "Some error occurred while creating the transaction.")
     }
+}
+
+async function isAlreadySent(tx: TxWire): Promise<boolean> {
+    return await isWaiting(tx) || await isInReceiverSavedChain(tx)
+}
+
+async function isWaiting(tx: TxWire): Promise<boolean> {
+    return (await WaitingTx.findOne({ where: { hash: tx.h } })) !== null
+}
+
+async function isInReceiverSavedChain(tx: TxWire): Promise<boolean> {
+    const receiver = await User.findOne({ where: { publickey: tx.p } }) as any
+    if (!receiver) return false
+    return (receiver.blocks as BlockWire[]).some(block => block.x.some(savedTx => savedTx.h === tx.h))
 }
 
 export async function listWaitingTx(req: Request, res: Response): Promise<void> {
@@ -80,17 +94,13 @@ export async function verifyTx(req: Request, res: Response): Promise<void> {
         return;
     }
 
-    const sender = await User.findOne({ where: { publickey: tx.s } });
-    if (!sender) {
-        respond('unknown-sender');
-        return;
-    }
+    const failure = await findCrossVerificationFailure(tx)
+    respond(failure ? VERIFY_STATUS_BY_FAILURE[failure] : 'confirmed')
+}
 
-    const chain = loadValidChain((sender as any).blocks)
-    if (!chain) {
-        respond('invalid');
-        return;
-    }
-
-    respond(chainContainsTx(chain, tx.h) ? 'confirmed' : 'pending')
+const VERIFY_STATUS_BY_FAILURE: Record<CrossVerificationFailure, TxVerifyResponse['status']> = {
+    'unknown-sender': 'unknown-sender',
+    'inactive-sender': 'unknown-sender',
+    'invalid-chain': 'invalid',
+    'tx-not-in-chain': 'pending',
 }

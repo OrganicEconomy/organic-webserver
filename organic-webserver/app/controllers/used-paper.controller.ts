@@ -4,6 +4,7 @@ import { EcosystemBlockchain, TransactionMaker } from 'organic-money/src/index.j
 import { UsedPaper, Ecosystem } from "../models.js";
 import { isValidTransaction } from "../services/blockchain.service.js"
 import { sendError } from '../utils/api-error.js'
+import { findCrossVerificationFailure, sendCrossVerificationError } from '../services/cross-verification.service.js'
 
 /**
  * POST /papers/cash — requires the full PAPER transaction, not a bare hash:
@@ -21,6 +22,12 @@ export async function postCashPaper(req: Request, res: Response): Promise<void> 
     if (tx.t !== TxType.PAPER || !isValidTransaction(tx)) {
         sendError(res, 400, "Invalid or non-PAPER transaction.", 'INVALID_TX');
         return;
+    }
+
+    const failure = await findCrossVerificationFailure(tx)
+    if (failure) {
+        sendCrossVerificationError(res, failure)
+        return
     }
 
     const alreadyCashed = await UsedPaper.findOne({ where: { hash: tx.h } })

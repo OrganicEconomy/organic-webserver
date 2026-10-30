@@ -1,8 +1,9 @@
 import request from 'supertest';
 import app from "../app.js";
 import assert from "assert";
-import { UsedPaper, Ecosystem } from "../app/models.js";
-import { CitizenBlockchain, EcosystemBlockchain } from 'organic-money/src/index.js';
+import { UsedPaper, Ecosystem, User } from "../app/models.js";
+import { CitizenBlockchain, EcosystemBlockchain, publicFromPrivate } from 'organic-money/src/index.js';
+import { randomPrivateKey } from 'organic-money/src/crypto.js';
 import { encryptEcosystemKey } from '../app/utils/ecosystem-key.util.js';
 
 const SECRETKEY = process.env.ORGANIC_SECRET_KEY as string
@@ -14,6 +15,31 @@ function makePaper() {
     referentBc.startBlockchain("Referent", new Date(), SECRETKEY)
     const referentPk = referentBc.getMyPublicKey()
     return bc.generatePaper(sk, 1, referentPk)
+}
+
+async function makeSavedPaper(targetPk?: string) {
+    const bc = new CitizenBlockchain()
+    const sk = bc.startBlockchain("PaperMaker", new Date(), SECRETKEY)
+    const referentPk = targetPk ?? publicFromPrivate(randomPrivateKey())
+    const paper = bc.generatePaper(sk, 1, referentPk)
+    await User.create({
+        mail: `${bc.getMyPublicKey()}@test.test`, password: "test", publickey: bc.getMyPublicKey(),
+        name: "PaperMaker", secretkey: sk, blocks: bc.export(), status: 'active'
+    })
+    return paper
+}
+
+async function makeEcosystem(name: string) {
+    const adminBc = new CitizenBlockchain()
+    adminBc.startBlockchain(`${name}Admin`, new Date(), SECRETKEY)
+    const eco = new EcosystemBlockchain()
+    const ecoSk = eco.makeBirthBlock(null, adminBc.getMyPublicKey(), name)
+    eco.validateAccount(ecoSk)
+    await Ecosystem.create({
+        publickey: eco.getMyPublicKey(), name, blocks: eco.export(),
+        ecosk: await encryptEcosystemKey(ecoSk), iscore: false, validatorpk: adminBc.getMyPublicKey(),
+    })
+    return eco.getMyPublicKey()
 }
 
 // A real DER-encoded SECP256K1 signature (hex) — length varies with r/s
@@ -152,7 +178,7 @@ describe('POST /cashPaper', () => {
     });
 
     it('Should register the hash and return 200 for a valid, uncashed paper.', async () => {
-        const paper = makePaper()
+        const paper = await makeSavedPaper()
         const exported = paper.export()
 
         await request(app)
@@ -165,7 +191,7 @@ describe('POST /cashPaper', () => {
     });
 
     it('Should return 409 ALREADY_CASHED for a paper already registered.', async () => {
-        const paper = makePaper()
+        const paper = await makeSavedPaper()
         const exported = paper.export()
 
         await request(app).post('/api/papers/cash').send({ tx: exported }).expect(200)
@@ -178,21 +204,8 @@ describe('POST /cashPaper', () => {
     });
 
     it("Should apply the paper's money to the target ecosystem's own chain when it is a known ecosystem.", async () => {
-        const eco = new EcosystemBlockchain()
-        const adminBc = new CitizenBlockchain()
-        const adminSk = adminBc.startBlockchain("EcoAdmin2", new Date(), SECRETKEY)
-        const ecoSk = eco.makeBirthBlock(null, adminBc.getMyPublicKey(), "Core2")
-        eco.validateAccount(ecoSk)
-        const ecoPk = eco.getMyPublicKey()
-        await Ecosystem.create({
-            publickey: ecoPk, name: "Core2", blocks: eco.export(),
-            ecosk: await encryptEcosystemKey(ecoSk), iscore: false, validatorpk: adminBc.getMyPublicKey(),
-        })
-
-        const bc = new CitizenBlockchain()
-        const sk = bc.startBlockchain("PaperMaker2", new Date(), SECRETKEY)
-        bc.createMoneyAndInvests(sk)
-        const paper = bc.generatePaper(sk, 1, ecoPk)
+        const ecoPk = await makeEcosystem("Core2")
+        const paper = await makeSavedPaper(ecoPk)
 
         await request(app)
             .post('/api/papers/cash')
@@ -205,10 +218,44 @@ describe('POST /cashPaper', () => {
         assert.equal(cashedPaperTxs.length, 1, "the ecosystem's own chain should record the cashed paper")
     });
 
+    it('Should return 403 UNKNOWN_SENDER and credit nothing for a paper signed by an unregistered key.', async () => {
+        const ecoPk = await makeEcosystem("Core3")
+        const forger = new CitizenBlockchain()
+        const forgerSk = forger.makeBirthBlock("Forger", new Date(), null)
+        forger.validateAccount(forgerSk)
+        const forgedPaper = forger.generatePaper(forgerSk, 1, ecoPk)
+
+        const res = await request(app)
+            .post('/api/papers/cash')
+            .send({ tx: forgedPaper.export() })
+            .expect(403)
+        assert.equal(res.body.code, 'UNKNOWN_SENDER')
+
+        assert.equal(await UsedPaper.findOne({ where: { hash: forgedPaper.signature } }), null)
+        const row = await Ecosystem.findOne({ where: { publickey: ecoPk } }) as any
+        assert.equal(new EcosystemBlockchain(row.blocks).lastblock.money.length, 0)
+    });
+
+    it("Should return 404 TX_NOT_IN_CHAIN for a paper missing from its issuer's saved chain.", async () => {
+        const ecoPk = await makeEcosystem("Core4")
+        const bc = new CitizenBlockchain()
+        const sk = bc.startBlockchain("Issuer", new Date(), SECRETKEY)
+        await User.create({
+            mail: `${bc.getMyPublicKey()}@test.test`, password: "test", publickey: bc.getMyPublicKey(),
+            name: "Issuer", secretkey: sk, blocks: bc.export(), status: 'active'
+        })
+        const unsavedPaper = bc.generatePaper(sk, 1, ecoPk)
+
+        const res = await request(app)
+            .post('/api/papers/cash')
+            .send({ tx: unsavedPaper.export() })
+            .expect(404)
+        assert.equal(res.body.code, 'TX_NOT_IN_CHAIN')
+    });
+
     it('Should still register the hash only (legacy behavior) when the paper targets an unknown pk.', async () => {
-        // The referent in makePaper() is just a random citizen pk, not a
-        // registered Ecosystem row — this must not throw.
-        const paper = makePaper()
+        // The referent is just a random pk, not a registered Ecosystem row — this must not throw.
+        const paper = await makeSavedPaper()
         await request(app)
             .post('/api/papers/cash')
             .send({ tx: paper.export() })

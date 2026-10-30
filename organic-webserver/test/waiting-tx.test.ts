@@ -2,7 +2,7 @@ import request from 'supertest';
 import app from "../app.js";
 import assert from "assert";
 import { WaitingTx, User } from "../app/models.js";
-import { CitizenBlockchain, signHash, hashTimestampAuth } from 'organic-money/src/index.js';
+import { CitizenBlockchain, BlockMaker, TransactionMaker, signHash, hashTimestampAuth } from 'organic-money/src/index.js';
 
 const SECRETKEY = process.env.ORGANIC_SECRET_KEY as string
 
@@ -19,6 +19,48 @@ async function registerSender() {
         blocks: bc.export()
     })
     return { bc, sk, pk }
+}
+
+async function registerSelfValidatedSender(status: string) {
+    const bc = new CitizenBlockchain()
+    const sk = bc.makeBirthBlock("Sybil", new Date(), null)
+    bc.validateAccount(sk)
+    const pk = bc.getMyPublicKey()
+    const receiverPk = await makeReceiver()
+    const transaction = bc.pay(sk, receiverPk, 1)
+    await User.create({
+        mail: `${pk}@test.test`,
+        password: "test",
+        publickey: pk,
+        name: "Sybil",
+        secretkey: sk,
+        blocks: bc.export(),
+        status,
+    })
+    return transaction
+}
+
+async function registerSenderWithSavedPayment() {
+    const { bc, sk, pk } = await registerSender()
+    const receiver = new CitizenBlockchain()
+    const receiverSk = receiver.startBlockchain("Receiver", new Date(), SECRETKEY)
+    const payment = bc.pay(sk, receiver.getMyPublicKey(), 1)
+    await User.update({ blocks: bc.export() }, { where: { publickey: pk } })
+    return { payment, receiver, receiverSk }
+}
+
+async function registerReceiver(receiver: InstanceType<typeof CitizenBlockchain>, receiverSk: string) {
+    const pk = receiver.getMyPublicKey()
+    await User.create({
+        mail: `${pk}@test.test`, password: "test", publickey: pk, name: "Receiver",
+        secretkey: receiverSk, blocks: receiver.export(), devicetoken: "receiver-device"
+    })
+}
+
+function signBlock(blockObj: object, sk: string) {
+    const block = BlockMaker.make(blockObj)
+    block.merkle()
+    return signHash(block.hash(), sk)
 }
 
 async function makeReceiver() {
@@ -112,6 +154,67 @@ describe('POST /tx/send', () => {
             .send({ tx: transaction.export() })
             .expect(400)
         assert.equal(res.body.code, 'INVALID_CHAIN')
+    });
+
+    it('Should return 409 for a payment that is already waiting for its receiver.', async () => {
+        const { payment } = await registerSenderWithSavedPayment()
+        await request(app).post('/api/tx/send').send({ tx: payment.export() }).expect(200)
+
+        await request(app)
+            .post('/api/tx/send')
+            .send({ tx: payment.export() })
+            .expect(409)
+    });
+
+    it('Should return 409 and queue nothing when replaying a payment its receiver already saved.', async () => {
+        const { payment, receiver, receiverSk } = await registerSenderWithSavedPayment()
+        await registerReceiver(receiver, receiverSk)
+        await request(app).post('/api/tx/send').send({ tx: payment.export() }).expect(200)
+
+        receiver.receivePay(TransactionMaker.make(payment.export()))
+        const lastblock = receiver.export()[0]
+        await request(app)
+            .put('/api/users/save')
+            .set('x-signature', signBlock(lastblock, receiverSk))
+            .send({ publickey: receiver.getMyPublicKey(), block: lastblock, devicetoken: "receiver-device" })
+            .expect(200)
+
+        await request(app)
+            .post('/api/tx/send')
+            .send({ tx: payment.export() })
+            .expect(409)
+        assert.equal(await WaitingTx.findOne({ where: { hash: payment.signature } }), null)
+    });
+
+    it('Should return 400 INVALID_TX for a saved transaction that is not a PAY.', async () => {
+        const { bc } = await registerSender()
+        const creation = bc.getLastCreationTransaction()
+
+        const res = await request(app)
+            .post('/api/tx/send')
+            .send({ tx: creation.export() })
+            .expect(400)
+        assert.equal(res.body.code, 'INVALID_TX')
+    });
+
+    it('Should return 403 UNKNOWN_SENDER when a pending account validated its own chain.', async () => {
+        const transaction = await registerSelfValidatedSender('pending-validation')
+
+        const res = await request(app)
+            .post('/api/tx/send')
+            .send({ tx: transaction.export() })
+            .expect(403)
+        assert.equal(res.body.code, 'UNKNOWN_SENDER')
+    });
+
+    it('Should return 403 UNKNOWN_SENDER when a rejected account validated its own chain.', async () => {
+        const transaction = await registerSelfValidatedSender('rejected')
+
+        const res = await request(app)
+            .post('/api/tx/send')
+            .send({ tx: transaction.export() })
+            .expect(403)
+        assert.equal(res.body.code, 'UNKNOWN_SENDER')
     });
 
     it('Should return 404 TX_NOT_IN_CHAIN when the transaction was never saved by the sender.', async () => {
@@ -236,6 +339,16 @@ describe('POST /tx/verify', () => {
         const sk = bc.startBlockchain("Unknown", new Date(), SECRETKEY)
         const pk2 = await makeReceiver()
         const transaction = bc.pay(sk, pk2, 1)
+
+        const res = await request(app)
+            .post('/api/tx/verify')
+            .send({ tx: transaction.export() })
+            .expect(200)
+        assert.equal(res.body.status, 'unknown-sender')
+    });
+
+    it('Should return status unknown-sender when a pending account validated its own chain.', async () => {
+        const transaction = await registerSelfValidatedSender('pending-validation')
 
         const res = await request(app)
             .post('/api/tx/verify')
