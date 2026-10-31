@@ -121,15 +121,16 @@ Save an updated block to the user's blockchain. Also removes any `WaitingTx` inc
 **Responses:**
 - `200` — success
 - `401` — missing `publickey`/`block`/`x-signature`, or the signature doesn't verify (block auth itself rejects missing fields — a bare 400 never reaches this route)
+- `400` — the block is invalid: not a citizen block, drops a transaction of the saved version of the last block, leaves the chain invalid, or holds a paper that was not cashed through `PUT /users/sign` by this citizen
 - `404` — unknown user
 - `409 DEVICE_REVOKED` — `devicetoken` does not match the active device (a more recent login happened elsewhere)
-- `500` — blockchain update error (JSON)
+- `409` — the block does not chain onto the stored last block
 
 ---
 
 ### `PUT /users/sign` — requires block auth
 
-Sign the last block of the user's blockchain using the server's own secret key — the server acting as referent, e.g. countersigning a paper cash-in. No devicetoken check: this is a server-driven operation, not a client save.
+Cash the papers of the submitted last block. It is the only way to cash a paper. For each paper the block holds that this citizen did not issue, the server checks the issuer (registered, active, paper in their saved chain) and that nobody else cashed it. It then registers the paper in this citizen's name, credits the target ecosystem and has the block signed by it, all at once. A block that brings no newly cashed paper changes nothing.
 
 **Headers:** `x-signature: <signature>`
 
@@ -139,10 +140,16 @@ Sign the last block of the user's blockchain using the server's own secret key �
 ```
 
 **Responses:**
-- `200` — success
+- `200` — papers cashed and block signed, or `{ "message": "Nothing new to sign." }`
+- `400` — the block is invalid (same rules as `PUT /users/save`)
+- `400 INVALID_CHAIN` — a paper's issuer has an invalid saved chain
 - `401` — missing `publickey`/`block`/`x-signature`, or the signature doesn't verify (block auth itself rejects missing fields — a bare 400 never reaches this route)
+- `403` — the account is not active
+- `403 UNKNOWN_SENDER` — a paper's issuer is unknown or not active
 - `404` — unknown user
-- `500` — block already signed or signing error (JSON)
+- `404 TX_NOT_IN_CHAIN` — a paper is missing from its issuer's saved chain
+- `409 ALREADY_CASHED` — another citizen already cashed one of the papers
+- `409` — the block does not chain onto the stored last block
 
 ---
 
@@ -233,20 +240,3 @@ Check if a paper (by hash) has already been cashed.
 - `200` — the hash (paper exists and is cashed)
 - `400` — missing or invalid hash format (not a hex string of plausible signature length)
 - `404` — paper not found
-
----
-
-### `POST /papers/cash`
-
-Cash a paper bill. Requires the **full transaction**, not a bare hash — the server verifies its crypto (and that it really is a `PAPER` transaction) before registering `tx.h` as used, closing the previous hole where anyone who merely knew a hash could burn it without proof.
-
-**Body:**
-```json
-{ "tx": { ...PAPER transaction export } }
-```
-
-**Responses:**
-- `200` — success message
-- `400` — missing `tx` (no `code`)
-- `400 INVALID_TX` — transaction present but cryptographically invalid, or not a PAPER transaction
-- `409 ALREADY_CASHED` — this paper was already cashed

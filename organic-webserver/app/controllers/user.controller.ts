@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express'
 import { randomUUID } from 'node:crypto'
-import { User, WaitingTx } from "../models.js"
+import { User, WaitingTx, sequelize } from "../models.js"
 import { Op } from 'sequelize'
 import bcrypt from 'bcryptjs'
 import type { BlockWire, MembershipStatus } from 'organic-protocol'
@@ -8,7 +8,9 @@ import { publicFromPrivate } from 'organic-money/src/index.js'
 
 import { validateBlockchain, assertWaitingValidation, updateLastBlock, signLastBlock, type BlockUpdateFailure } from '../services/blockchain.service.js'
 import { createEcosystem } from '../services/ecosystem.service.js'
+import { findPapersToCash, holdsOnlyPapersCashedBy, registerCashedPapers, sendPaperCashingError } from '../services/paper-cashing.service.js'
 import { sendError } from '../utils/api-error.js'
+import { runExclusively } from '../utils/exclusive-run.util.js'
 
 const SECRETKEY = process.env.ORGANIC_SECRET_KEY as string
 
@@ -139,6 +141,11 @@ export async function putSaveUser(req: Request, res: Response): Promise<void> {
     }
     const blocks = update.blocks
 
+    if (!await holdsOnlyPapersCashedBy(lastblock, publickey)) {
+        sendError(res, 400, "Submitted block holds a paper that was not cashed through /users/sign.");
+        return
+    }
+
     try {
         await User.update(
             { blocks: blocks },
@@ -162,6 +169,10 @@ function sendBlockUpdateError(res: Response, failure: BlockUpdateFailure): void 
 }
 
 export async function putSignAndSaveUser(req: Request, res: Response): Promise<void> {
+    await runExclusively(() => signAndSaveUser(req, res))
+}
+
+async function signAndSaveUser(req: Request, res: Response): Promise<void> {
     if (!req.body || !req.body.publickey || !req.body.block) {
         sendError(res, 400, "Fields 'publickey' and 'block' are needed.");
         return;
@@ -188,6 +199,17 @@ export async function putSignAndSaveUser(req: Request, res: Response): Promise<v
         return
     }
 
+    const papersToCash = await findPapersToCash(lastblock, publickey)
+    if ('failure' in papersToCash) {
+        sendPaperCashingError(res, papersToCash.failure)
+        return
+    }
+
+    if (papersToCash.papers.length === 0) {
+        res.send({ message: "Nothing new to sign." })
+        return
+    }
+
     let newBlocks
     try {
         newBlocks = await signLastBlock(update.blocks)
@@ -197,10 +219,10 @@ export async function putSignAndSaveUser(req: Request, res: Response): Promise<v
     }
 
     try {
-        await User.update(
-            { blocks: newBlocks },
-            { where: { publickey: publickey } }
-        )
+        await sequelize.transaction(async (transaction) => {
+            await registerCashedPapers(papersToCash.papers, publickey, transaction)
+            await User.update({ blocks: newBlocks }, { where: { publickey }, transaction })
+        })
         res.send({ message: "User was updated successfully." });
     } catch (err) {
         sendError(res, 500, `Error updating User with pk=${publickey} : "${err}"`);
