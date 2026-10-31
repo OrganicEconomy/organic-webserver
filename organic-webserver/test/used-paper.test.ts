@@ -290,6 +290,37 @@ describe('PUT /users/sign (cashing papers)', () => {
         assert.equal(user.blocks.length, 2)
     });
 
+    it('Should answer ALREADY_CASHED to the loser of two simultaneous cashings of the same paper.', async () => {
+        const ecoPk = await makeEcosystem("Simultaneous")
+        const paper = await makeSavedPaper(ecoPk)
+        const [alice, bob] = [await registerCasher(), await registerCasher()]
+
+        const responses = await Promise.all([cashThroughSign(alice, paper), cashThroughSign(bob, paper)])
+
+        assert.deepEqual(responses.map(res => res.status).sort(), [200, 409])
+        assert.equal(responses.find(res => res.status === 409)!.body.code, 'ALREADY_CASHED')
+    });
+
+    it('Should credit the ecosystem with every paper cashed simultaneously by different citizens.', async () => {
+        const ecoPk = await makeEcosystem("Busy")
+        const [alice, bob] = [await registerCasher(), await registerCasher()]
+        const [alicePaper, bobPaper] = [await makeSavedPaper(ecoPk), await makeSavedPaper(ecoPk)]
+
+        await Promise.all([cashThroughSign(alice, alicePaper).expect(200), cashThroughSign(bob, bobPaper).expect(200)])
+
+        assert.equal(await ecosystemMoney(ecoPk), 2)
+    });
+
+    it('Should refuse a paper addressed to neither the server nor a known ecosystem.', async () => {
+        const casher = await registerCasher()
+        const paper = await makeSavedPaper()
+
+        const res = await cashThroughSign(casher, paper).expect(400)
+        assert.equal(res.body.code, 'INVALID_TX')
+
+        assert.equal(await UsedPaper.findOne({ where: { hash: paper.signature } }), null)
+    });
+
     it('Should register none of the papers of a block when one of them is refused.', async () => {
         const ecoPk = await makeEcosystem("Atomic")
         const casher = await registerCasher()
