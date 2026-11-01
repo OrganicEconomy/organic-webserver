@@ -18,7 +18,8 @@ export async function holdsOnlyPapersCashedBy(block: BlockWire, casherPk: string
     return registered === papers.length
 }
 
-export type PapersToCash = { papers: TxWire[] } | { failure: PaperCashingFailure }
+export type PaperRefusal = { failure: PaperCashingFailure, paperHash: string }
+export type PapersToCash = { papers: TxWire[] } | PaperRefusal
 
 export async function findPapersToCash(block: BlockWire, casherPk: string): Promise<PapersToCash> {
     const papers = papersCashedIn(block, casherPk)
@@ -26,11 +27,11 @@ export async function findPapersToCash(block: BlockWire, casherPk: string): Prom
     const newPapers = []
     for (const paper of papers) {
         if (casherByHash.has(paper.h)) {
-            if (casherByHash.get(paper.h) !== casherPk) return { failure: 'already-cashed' }
+            if (casherByHash.get(paper.h) !== casherPk) return { failure: 'already-cashed', paperHash: paper.h }
             continue
         }
         const failure = await findNewPaperFailure(paper)
-        if (failure) return { failure }
+        if (failure) return { failure, paperHash: paper.h }
         newPapers.push(paper)
     }
     return { papers: newPapers }
@@ -50,13 +51,13 @@ async function isKnownEcosystem(publickey: string): Promise<boolean> {
     return await Ecosystem.count({ where: { publickey } }) > 0
 }
 
-export function sendPaperCashingError(res: Response, failure: PaperCashingFailure): void {
+export function sendPaperCashingError(res: Response, { failure, paperHash }: PaperRefusal): void {
     if (failure === 'already-cashed') {
-        sendError(res, 409, "Paper already cashed.", 'ALREADY_CASHED')
+        sendError(res, 409, "Paper already cashed.", 'ALREADY_CASHED', paperHash)
     } else if (failure === 'unknown-ecosystem') {
-        sendError(res, 400, "Paper targets an unknown ecosystem.", 'INVALID_TX')
+        sendError(res, 400, "Paper targets an unknown ecosystem.", 'INVALID_TX', paperHash)
     } else {
-        sendCrossVerificationError(res, failure)
+        sendCrossVerificationError(res, failure, paperHash)
     }
 }
 

@@ -198,6 +198,14 @@ describe('PUT /users/sign (cashing papers)', () => {
         assert.equal(user.blocks.length, 2, "the block holding the forged paper must not be saved")
     });
 
+    it('Should name the paper whose issuer is not registered.', async () => {
+        const forgedPaper = makeForgedPaper(await makeEcosystem("NamedForged"))
+
+        const res = await cashThroughSign(await registerCasher(), forgedPaper).expect(403)
+
+        assert.equal(res.body.tx, forgedPaper.signature)
+    });
+
     it("Should refuse to cash a paper missing from its issuer's saved chain.", async () => {
         const ecoPk = await makeEcosystem("Unsaved")
         const casher = await registerCasher()
@@ -239,6 +247,16 @@ describe('PUT /users/sign (cashing papers)', () => {
         assert.equal(await ecosystemMoney(ecoPk), 1)
         const user = await User.findOne({ where: { publickey: photographer.pk } }) as any
         assert.equal(user.blocks.length, 2)
+    });
+
+    it('Should name the paper already cashed by another citizen.', async () => {
+        const ecoPk = await makeEcosystem("NamedPhotographed")
+        const paper = await makeSavedPaper(ecoPk)
+        await cashThroughSign(await registerCasher(), paper).expect(200)
+
+        const res = await cashThroughSign(await registerCasher(), paper).expect(409)
+
+        assert.equal(res.body.tx, paper.signature)
     });
 
     it('Should cash a second paper added to the same open block as a first one already cashed by this citizen.', async () => {
@@ -329,6 +347,17 @@ describe('PUT /users/sign (cashing papers)', () => {
         assert.equal(res.body.code, 'INVALID_TX')
 
         assert.equal(await UsedPaper.findOne({ where: { hash: paper.signature } }), null)
+    });
+
+    it('Should name the refused paper rather than the accepted one of the same block.', async () => {
+        const ecoPk = await makeEcosystem("NamedAmongTwo")
+        const casher = await registerCasher()
+        casher.bc.cashPaper(TransactionMaker.make((await makeSavedPaper(ecoPk)).export()))
+        const forgedPaper = makeForgedPaper(ecoPk)
+
+        const res = await cashThroughSign(casher, forgedPaper).expect(403)
+
+        assert.equal(res.body.tx, forgedPaper.signature)
     });
 
     it('Should register none of the papers of a block when one of them is refused.', async () => {

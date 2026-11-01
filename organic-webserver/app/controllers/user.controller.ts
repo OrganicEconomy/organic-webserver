@@ -201,7 +201,7 @@ async function signAndSaveUser(req: Request, res: Response): Promise<void> {
 
     const papersToCash = await findPapersToCash(lastblock, publickey)
     if ('failure' in papersToCash) {
-        sendPaperCashingError(res, papersToCash.failure)
+        sendPaperCashingError(res, papersToCash)
         return
     }
 

@@ -6,7 +6,8 @@ import type { ApiError, ApiErrorCode } from 'organic-protocol'
  * (PROTOCOL.md §5). `code` is reserved for the enumerated ApiErrorCode
  * cases; plain validation errors (missing field, malformed input) omit it.
  */
-export function sendError(res: Response, status: number, error: string, code?: ApiErrorCode): void {
-    const body: ApiError = code ? { error, code } : { error }
+export function sendError(res: Response, status: number, error: string, code?: ApiErrorCode, tx?: string): void {
+    const body: ApiError & { tx?: string } = code ? { error, code } : { error }
+    if (tx) body.tx = tx
     res.status(status).send(body)
 }
