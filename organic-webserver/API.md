@@ -130,7 +130,7 @@ Save an updated block to the user's blockchain. Also removes any `WaitingTx` inc
 
 ### `PUT /users/sign` — requires block auth
 
-Cash the papers of the submitted last block. It is the only way to cash a paper. For each paper the block holds that this citizen did not issue, the server checks the issuer (registered, active, paper in their saved chain) and that nobody else cashed it. It then registers the paper in this citizen's name and has the block counter-signed by this server's core, the paper's referent, all at once. The core receives nothing: the issuer loses the units, the casher gains the experience. A block that brings no newly cashed paper changes nothing. When a paper is refused, nothing is cashed and the error names that paper: `{ "error", "code", "tx": "<paper hash>" }`.
+Cash the papers of the submitted last block. It is the only way to cash a paper. For each paper the block holds that this citizen did not issue, the server checks the issuer (registered, active, paper in their saved chain) and that nobody else cashed it. It then registers the paper in this citizen's name and has the block counter-signed by this server's core, the paper's referent, all at once. The issuer loses the units, the casher gains the experience. A block that brings no newly cashed paper changes nothing. When a paper is refused, nothing is cashed and the error names that paper: `{ "error", "code", "tx": "<paper hash>" }`.
 
 **Headers:** `x-signature: <signature>`
 
