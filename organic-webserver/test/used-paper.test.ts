@@ -311,7 +311,17 @@ describe('PUT /users/sign (cashing papers)', () => {
         assert.equal(await ecosystemMoney(ecoPk), 2)
     });
 
-    it('Should refuse a paper addressed to neither the server nor a known ecosystem.', async () => {
+    it('Should refuse a paper addressed to the server key, which has no ecosystem to credit.', async () => {
+        const casher = await registerCasher()
+        const paper = await makeSavedPaper(publicFromPrivate(SECRETKEY))
+
+        const res = await cashThroughSign(casher, paper).expect(400)
+        assert.equal(res.body.code, 'INVALID_TX')
+
+        assert.equal(await UsedPaper.findOne({ where: { hash: paper.signature } }), null)
+    });
+
+    it('Should refuse a paper addressed to an unknown ecosystem.', async () => {
         const casher = await registerCasher()
         const paper = await makeSavedPaper()
 

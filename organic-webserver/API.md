@@ -143,6 +143,7 @@ Cash the papers of the submitted last block. It is the only way to cash a paper.
 - `200` — papers cashed and block signed, or `{ "message": "Nothing new to sign." }`
 - `400` — the block is invalid (same rules as `PUT /users/save`)
 - `400 INVALID_CHAIN` — a paper's issuer has an invalid saved chain
+- `400 INVALID_TX` — a paper targets no known ecosystem
 - `401` — missing `publickey`/`block`/`x-signature`, or the signature doesn't verify (block auth itself rejects missing fields — a bare 400 never reaches this route)
 - `403` — the account is not active
 - `403 UNKNOWN_SENDER` — a paper's issuer is unknown or not active
