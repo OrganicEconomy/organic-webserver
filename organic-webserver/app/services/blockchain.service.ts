@@ -1,4 +1,4 @@
-import { Blockchain, CitizenBlockchain, BlockMaker, TransactionMaker, publicFromPrivate } from 'organic-money/src/index.js';
+import { Blockchain, CitizenBlockchain, BlockMaker, TransactionMaker } from 'organic-money/src/index.js';
 import { BlockType, type BlockWire, type TxWire } from 'organic-protocol'
 import { Ecosystem } from '../models.js'
 import { decryptEcosystemKey } from '../utils/ecosystem-key.util.js'
@@ -79,11 +79,8 @@ function keepsEveryTransaction(savedBlock: BlockWire, newVersion: BlockWire): bo
  * own block but wrong here. Sign the block directly instead, as the library
  * itself does internally minus that ownership guard.
  *
- * A block containing a paper (getPapersHandler()) must be signed by whoever
- * that paper targets — the server's own key only for old papers already in
- * circulation from before a core ecosystem existed (or a block with no
- * paper at all, e.g. genesis); a known Ecosystem's own key otherwise
- * (Phase-2.md §6 étape 10).
+ * A block containing a paper (getPapersHandler()) must be signed by the
+ * ecosystem that paper targets; a block with no paper (genesis) by the server.
  */
 export async function signLastBlock(blocks: BlockWire[]) {
     const blockchain = new CitizenBlockchain(blocks)
@@ -93,7 +90,7 @@ export async function signLastBlock(blocks: BlockWire[]) {
 
     const handlerPk = blockchain.lastblock.getPapersHandler()
     let signingKey = SECRETKEY
-    if (handlerPk !== null && handlerPk !== publicFromPrivate(SECRETKEY)) {
+    if (handlerPk !== null) {
         const eco = await Ecosystem.findOne({ where: { publickey: handlerPk } }) as any
         if (!eco) {
             throw new Error('Unknown papers handler.')

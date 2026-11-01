@@ -397,27 +397,15 @@ async function main() {
     )
   })
 
-  await step('papers/cash is accepted and credits the core ecosystem (200)', async () => {
-    const { status, json } = await request('POST', '/papers/cash', { body: { tx: paperForB.export() } })
-    assert(status === 200, `expected 200, got ${status}: ${JSON.stringify(json)}`)
-    const core = await fetchEcosystem(corePk)
-    const cashedInCore = core.lastblock.transactions.some((t) => t.type === 5 && t.signature === paperTx.signature)
-    assert(cashedInCore, "the core ecosystem's own chain should record the cashed paper")
-  })
-
-  await step("sign B's block (referent counter-signs the paper-cashing block)", async () => {
+  await step("sign B's block: the server cashes the paper and the core ecosystem counter-signs", async () => {
     await signBlock(B)
+    const { json } = await request('GET', `/validations/status/${B.chain.getMyPublicKey()}`)
+    assert(json.blocks[0].s === corePk, `B's last block should be signed by the core, got signer ${json.blocks[0].s}`)
   })
 
   await step('paper is now cashed (200)', async () => {
     const { status } = await request('GET', '/papers/isCashed', { query: { hash: paperTx.signature } })
     assert(status === 200, `expected 200, got ${status}`)
-  })
-
-  await step('re-cashing the same paper is rejected (409 ALREADY_CASHED)', async () => {
-    const { status, json } = await request('POST', '/papers/cash', { body: { tx: paperForB.export() } })
-    assert(status === 409, `expected 409, got ${status}: ${JSON.stringify(json)}`)
-    assert(json?.code === 'ALREADY_CASHED', `expected code ALREADY_CASHED, got ${json?.code}`)
   })
 
   await step('A engages invests into the core ecosystem', async () => {

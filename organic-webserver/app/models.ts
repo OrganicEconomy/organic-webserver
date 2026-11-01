@@ -115,6 +115,10 @@ const UsedPaper = sequelize.define("usedpaper", {
     hash: {
         type: Sequelize.STRING(146),
         primaryKey: true,
+    },
+    casher: {
+        type: Sequelize.STRING(66),
+        allowNull: true,
     }
 });
 

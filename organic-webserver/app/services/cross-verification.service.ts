@@ -25,7 +25,7 @@ export async function findCrossVerificationFailure(tx: TxWire): Promise<CrossVer
     return null
 }
 
-export function sendCrossVerificationError(res: Response, failure: CrossVerificationFailure): void {
+export function sendCrossVerificationError(res: Response, failure: CrossVerificationFailure, txHash?: string): void {
     const { status, error, code } = FAILURE_RESPONSES[failure]
-    sendError(res, status, error, code)
+    sendError(res, status, error, code, txHash)
 }

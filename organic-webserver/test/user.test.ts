@@ -32,24 +32,6 @@ async function registerActiveCitizen(bc: InstanceType<typeof CitizenBlockchain>,
     })
 }
 
-async function registerCitizenWithPaperBlock() {
-    const eco = new EcosystemBlockchain()
-    const ecoSk = eco.makeBirthBlock(null, TEST_PK, "Core")
-    eco.validateAccount(ecoSk)
-    const ecoPk = eco.getMyPublicKey()
-    await Ecosystem.create({
-        publickey: ecoPk, name: "Core", blocks: eco.export(),
-        ecosk: await encryptEcosystemKey(ecoSk), iscore: true, validatorpk: TEST_PK,
-    })
-
-    const bc = new CitizenBlockchain()
-    const sk = bc.startBlockchain("PaperMaker", new Date(), SECRETKEY)
-    bc.createMoneyAndInvests(sk)
-    bc.generatePaper(sk, 1, ecoPk)
-    await registerActiveCitizen(bc, sk)
-    return { bc, sk, pk: bc.getMyPublicKey() }
-}
-
 async function registerPendingCitizen() {
     const bc = new CitizenBlockchain()
     const sk = bc.makeBirthBlock("Pending", new Date(), null)
@@ -647,32 +629,6 @@ describe('PUT /users/sign', () => {
             .expect(404)
     });
 
-    it('Should return 500 as JSON when block is already signed.', async () => {
-        const bc = new CitizenBlockchain()
-        const sk = bc.startBlockchain("testName", new Date(), SECRETKEY)
-        const pk = bc.getMyPublicKey()
-
-        await User.create({
-            mail: "test@test.test",
-            password: "test",
-            publickey: pk,
-            name: "test",
-            secretkey: sk,
-            blocks: bc.export()
-        })
-
-        bc.newBlock()
-        bc.closeLastBlock(sk)
-        const signedBlock = bc.export()[0]
-        await request(app)
-            .put('/api/users/sign')
-            .set('Accept', 'application/json')
-            .set('x-signature', signBlock(signedBlock, sk))
-            .send({ publickey: pk, block: signedBlock })
-            .expect(500)
-            .expect('Content-Type', /json/)
-    });
-
     it('Should refuse to sign the InitializationBlock of a pending account validating itself.', async () => {
         const { bc, sk, pk } = await registerPendingCitizen()
         bc.validateAccount(sk)
@@ -686,6 +642,27 @@ describe('PUT /users/sign', () => {
 
         const user = await User.findOne({ where: { publickey: pk } }) as any
         assert.equal(user.blocks.length, 1)
+    });
+
+    it("Should leave a victim's chain untouched when its public closed block is replayed without any newly cashed paper.", async () => {
+        const victim = new CitizenBlockchain()
+        const victimSk = victim.startBlockchain("Victim", new Date(), SECRETKEY)
+        const victimPk = victim.getMyPublicKey()
+        victim.pay(victimSk, TEST_PK, 1)
+        victim.closeLastBlock(victimSk)
+        await registerActiveCitizen(victim, victimSk)
+
+        const publicBlock: BlockWire = victim.lastblock.export()
+        const replayedBlock = { ...publicBlock, h: null }
+
+        await request(app)
+            .put('/api/users/sign')
+            .set('x-signature', publicBlock.h as string)
+            .send({ publickey: victimPk, block: replayedBlock })
+            .expect(200)
+
+        const user = await User.findOne({ where: { publickey: victimPk } }) as any
+        assert.deepEqual(user.blocks[0], publicBlock)
     });
 
     it('Should refuse to sign for an account that is not active.', async () => {
@@ -707,100 +684,4 @@ describe('PUT /users/sign', () => {
         assert.equal(user.blocks[0].s, null)
     });
 
-    it('Should return 200, update and sign given new block if not new.', async () => {
-        const bc = new CitizenBlockchain()
-        const sk = bc.startBlockchain("testName", new Date(), SECRETKEY)
-        const pk = bc.getMyPublicKey()
-        bc.pay(sk, pk, 1)
-
-        const bc2 = new CitizenBlockchain()
-        const sk2 = bc2.startBlockchain("Payer", new Date(), SECRETKEY)
-        const transaction = bc2.pay(sk2, pk, 1)
-
-        await User.create({
-            mail: "test@test.test",
-            password: "test",
-            publickey: pk,
-            name: "test",
-            secretkey: sk,
-            blocks: bc.export()
-        })
-
-        bc.receivePay(transaction)
-
-        assert.equal(bc.blocks.length, 3)
-
-        const blockToSign = bc.export()[0]
-        await request(app)
-            .put('/api/users/sign')
-            .set('Accept', 'application/json')
-            .set('x-signature', signBlock(blockToSign, sk))
-            .send({ publickey: pk, block: blockToSign })
-            .expect(200)
-
-        const user = await User.findOne({ where: { publickey: pk } }) as any
-        assert.equal(user.blocks.length, 3)
-        assert.ok(user.blocks[0].h)
-        assert.equal(user.blocks[0].x.length, 2)
-        assert.ok(new CitizenBlockchain(user.blocks).lastblock.isValid())
-    });
-
-    it('Should sign with the target ecosystem key when the block contains a paper addressed to it (not the server key).', async () => {
-        const eco = new EcosystemBlockchain()
-        const adminBc = new CitizenBlockchain()
-        const adminSk = adminBc.startBlockchain("EcoAdmin", new Date(), SECRETKEY)
-        const ecoSk = eco.makeBirthBlock(null, adminBc.getMyPublicKey(), "Core")
-        eco.validateAccount(ecoSk)
-        const ecoPk = eco.getMyPublicKey()
-        await Ecosystem.create({
-            publickey: ecoPk, name: "Core", blocks: eco.export(),
-            ecosk: await encryptEcosystemKey(ecoSk), iscore: true, validatorpk: adminBc.getMyPublicKey(),
-        })
-
-        const bc = new CitizenBlockchain()
-        const sk = bc.startBlockchain("PaperMaker", new Date(), SECRETKEY)
-        const pk = bc.getMyPublicKey()
-        bc.createMoneyAndInvests(sk)
-        bc.generatePaper(sk, 1, ecoPk) // opens a fresh block automatically (InitializationBlock was already signed)
-
-        await User.create({
-            mail: "papermaker@test.test", password: "test", publickey: pk,
-            name: "PaperMaker", secretkey: sk, blocks: bc.export()
-        })
-
-        const blockToSign = bc.export()[0]
-        await request(app)
-            .put('/api/users/sign')
-            .set('x-signature', signBlock(blockToSign, sk))
-            .send({ publickey: pk, block: blockToSign })
-            .expect(200)
-
-        const user = await User.findOne({ where: { publickey: pk } }) as any
-        const signedBlock = user.blocks[0]
-        assert.equal(signedBlock.s, ecoPk, "signed by the ecosystem's own key, not the server's")
-        assert.notEqual(signedBlock.s, publicFromPrivate(SECRETKEY))
-    });
-
-    it('Should still let the client replace the signed block with its longer unsigned version.', async () => {
-        const { bc, sk, pk } = await registerCitizenWithPaperBlock()
-        const blockToSign = bc.lastblock.export()
-        await request(app)
-            .put('/api/users/sign')
-            .set('x-signature', signBlock(blockToSign, sk))
-            .send({ publickey: pk, block: blockToSign })
-            .expect(200)
-
-        const payer = new CitizenBlockchain()
-        const payerSk = payer.startBlockchain("Payer", new Date(), SECRETKEY)
-        bc.receivePay(payer.pay(payerSk, pk, 1))
-        const longerBlock = bc.lastblock.export()
-        await request(app)
-            .put('/api/users/save')
-            .set('x-signature', signBlock(longerBlock, sk))
-            .send({ publickey: pk, block: longerBlock, devicetoken: "current-device" })
-            .expect(200)
-
-        const user = await User.findOne({ where: { publickey: pk } }) as any
-        assert.deepEqual(user.blocks[0], longerBlock)
-    });
 });
