@@ -29,7 +29,12 @@ async function makeSavedPaper(targetPk?: string) {
     return paper
 }
 
-async function makeEcosystem(name: string) {
+async function makeCore() {
+    await Ecosystem.destroy({ where: {}, truncate: true })
+    return makeEcosystem("Core", true)
+}
+
+async function makeEcosystem(name: string, iscore = false) {
     const adminBc = new CitizenBlockchain()
     adminBc.startBlockchain(`${name}Admin`, new Date(), SECRETKEY)
     const eco = new EcosystemBlockchain()
@@ -37,7 +42,7 @@ async function makeEcosystem(name: string) {
     eco.validateAccount(ecoSk)
     await Ecosystem.create({
         publickey: eco.getMyPublicKey(), name, blocks: eco.export(),
-        ecosk: await encryptEcosystemKey(ecoSk), iscore: false, validatorpk: adminBc.getMyPublicKey(),
+        ecosk: await encryptEcosystemKey(ecoSk), iscore, validatorpk: adminBc.getMyPublicKey(),
     })
     return eco.getMyPublicKey()
 }
@@ -185,7 +190,7 @@ describe('POST /papers/cash', () => {
 
 describe('PUT /users/sign (cashing papers)', () => {
     it('Should refuse to cash a paper signed by an unregistered key, and credit nothing.', async () => {
-        const ecoPk = await makeEcosystem("Forged")
+        const ecoPk = await makeCore()
         const casher = await registerCasher()
         const forgedPaper = makeForgedPaper(ecoPk)
 
@@ -199,7 +204,7 @@ describe('PUT /users/sign (cashing papers)', () => {
     });
 
     it('Should name the paper whose issuer is not registered.', async () => {
-        const forgedPaper = makeForgedPaper(await makeEcosystem("NamedForged"))
+        const forgedPaper = makeForgedPaper(await makeCore())
 
         const res = await cashThroughSign(await registerCasher(), forgedPaper).expect(403)
 
@@ -207,7 +212,7 @@ describe('PUT /users/sign (cashing papers)', () => {
     });
 
     it("Should refuse to cash a paper missing from its issuer's saved chain.", async () => {
-        const ecoPk = await makeEcosystem("Unsaved")
+        const ecoPk = await makeCore()
         const casher = await registerCasher()
         const issuer = new CitizenBlockchain()
         const issuerSk = issuer.startBlockchain("Issuer", new Date(), SECRETKEY)
@@ -222,7 +227,7 @@ describe('PUT /users/sign (cashing papers)', () => {
     });
 
     it('Should register a legitimate paper in the name of its casher, credit the ecosystem and sign with its key.', async () => {
-        const ecoPk = await makeEcosystem("Legit")
+        const ecoPk = await makeCore()
         const casher = await registerCasher()
         const paper = await makeSavedPaper(ecoPk)
 
@@ -236,7 +241,7 @@ describe('PUT /users/sign (cashing papers)', () => {
     });
 
     it('Should refuse a paper already cashed by another citizen (a photographed paper).', async () => {
-        const ecoPk = await makeEcosystem("Photographed")
+        const ecoPk = await makeCore()
         const paper = await makeSavedPaper(ecoPk)
         await cashThroughSign(await registerCasher(), paper).expect(200)
         const photographer = await registerCasher()
@@ -250,7 +255,7 @@ describe('PUT /users/sign (cashing papers)', () => {
     });
 
     it('Should name the paper already cashed by another citizen.', async () => {
-        const ecoPk = await makeEcosystem("NamedPhotographed")
+        const ecoPk = await makeCore()
         const paper = await makeSavedPaper(ecoPk)
         await cashThroughSign(await registerCasher(), paper).expect(200)
 
@@ -260,7 +265,7 @@ describe('PUT /users/sign (cashing papers)', () => {
     });
 
     it('Should cash a second paper added to the same open block as a first one already cashed by this citizen.', async () => {
-        const ecoPk = await makeEcosystem("SecondPaper")
+        const ecoPk = await makeCore()
         const casher = await registerCasher()
         await cashThroughSign(casher, await makeSavedPaper(ecoPk)).expect(200)
         const secondPaper = await makeSavedPaper(ecoPk)
@@ -273,7 +278,7 @@ describe('PUT /users/sign (cashing papers)', () => {
     });
 
     it('Should still let the casher save a longer unsigned version of the block the server signed.', async () => {
-        const ecoPk = await makeEcosystem("LongerVersion")
+        const ecoPk = await makeCore()
         const casher = await registerCasher()
         await cashThroughSign(casher, await makeSavedPaper(ecoPk)).expect(200)
 
@@ -293,7 +298,7 @@ describe('PUT /users/sign (cashing papers)', () => {
     });
 
     it('Should refuse to save a block holding a paper that was never cashed through sign.', async () => {
-        const ecoPk = await makeEcosystem("SavedOnly")
+        const ecoPk = await makeCore()
         const casher = await registerCasher()
         casher.bc.cashPaper(TransactionMaker.make(makeForgedPaper(ecoPk).export()))
         const block = casher.bc.lastblock.export()
@@ -309,7 +314,7 @@ describe('PUT /users/sign (cashing papers)', () => {
     });
 
     it('Should answer ALREADY_CASHED to the loser of two simultaneous cashings of the same paper.', async () => {
-        const ecoPk = await makeEcosystem("Simultaneous")
+        const ecoPk = await makeCore()
         const paper = await makeSavedPaper(ecoPk)
         const [alice, bob] = [await registerCasher(), await registerCasher()]
 
@@ -320,7 +325,7 @@ describe('PUT /users/sign (cashing papers)', () => {
     });
 
     it('Should credit the ecosystem with every paper cashed simultaneously by different citizens.', async () => {
-        const ecoPk = await makeEcosystem("Busy")
+        const ecoPk = await makeCore()
         const [alice, bob] = [await registerCasher(), await registerCasher()]
         const [alicePaper, bobPaper] = [await makeSavedPaper(ecoPk), await makeSavedPaper(ecoPk)]
 
@@ -329,7 +334,7 @@ describe('PUT /users/sign (cashing papers)', () => {
         assert.equal(await ecosystemMoney(ecoPk), 2)
     });
 
-    it('Should refuse a paper addressed to the server key, which has no ecosystem to credit.', async () => {
+    it('Should refuse a paper addressed to the server key rather than its core.', async () => {
         const casher = await registerCasher()
         const paper = await makeSavedPaper(publicFromPrivate(SECRETKEY))
 
@@ -339,7 +344,17 @@ describe('PUT /users/sign (cashing papers)', () => {
         assert.equal(await UsedPaper.findOne({ where: { hash: paper.signature } }), null)
     });
 
-    it('Should refuse a paper addressed to an unknown ecosystem.', async () => {
+    it('Should refuse a paper whose referent is an ecosystem other than the core.', async () => {
+        const casher = await registerCasher()
+        const paper = await makeSavedPaper(await makeEcosystem("NotTheCore"))
+
+        const res = await cashThroughSign(casher, paper).expect(400)
+        assert.equal(res.body.code, 'INVALID_TX')
+
+        assert.equal(await UsedPaper.findOne({ where: { hash: paper.signature } }), null)
+    });
+
+    it('Should refuse a paper addressed to an unknown key.', async () => {
         const casher = await registerCasher()
         const paper = await makeSavedPaper()
 
@@ -350,7 +365,7 @@ describe('PUT /users/sign (cashing papers)', () => {
     });
 
     it('Should name the refused paper rather than the accepted one of the same block.', async () => {
-        const ecoPk = await makeEcosystem("NamedAmongTwo")
+        const ecoPk = await makeCore()
         const casher = await registerCasher()
         casher.bc.cashPaper(TransactionMaker.make((await makeSavedPaper(ecoPk)).export()))
         const forgedPaper = makeForgedPaper(ecoPk)
@@ -361,7 +376,7 @@ describe('PUT /users/sign (cashing papers)', () => {
     });
 
     it('Should register none of the papers of a block when one of them is refused.', async () => {
-        const ecoPk = await makeEcosystem("Atomic")
+        const ecoPk = await makeCore()
         const casher = await registerCasher()
         const legitPaper = await makeSavedPaper(ecoPk)
         casher.bc.cashPaper(TransactionMaker.make(legitPaper.export()))

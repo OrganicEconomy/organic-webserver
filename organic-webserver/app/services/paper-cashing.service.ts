@@ -6,7 +6,7 @@ import { Ecosystem, UsedPaper } from '../models.js'
 import { findCrossVerificationFailure, sendCrossVerificationError, type CrossVerificationFailure } from './cross-verification.service.js'
 import { sendError } from '../utils/api-error.js'
 
-export type PaperCashingFailure = CrossVerificationFailure | 'already-cashed' | 'unknown-ecosystem'
+export type PaperCashingFailure = CrossVerificationFailure | 'already-cashed' | 'not-core-referent'
 
 function papersCashedIn(block: BlockWire, casherPk: string): TxWire[] {
     return block.x.filter(tx => tx.t === TxType.PAPER && tx.s !== casherPk)
@@ -43,19 +43,19 @@ async function registeredCashers(papers: TxWire[]): Promise<Map<string, string |
 }
 
 async function findNewPaperFailure(paper: TxWire): Promise<PaperCashingFailure | null> {
-    if (!await isKnownEcosystem(paper.p)) return 'unknown-ecosystem'
+    if (!await isCore(paper.p)) return 'not-core-referent'
     return findCrossVerificationFailure(paper)
 }
 
-async function isKnownEcosystem(publickey: string): Promise<boolean> {
-    return await Ecosystem.count({ where: { publickey } }) > 0
+async function isCore(publickey: string): Promise<boolean> {
+    return await Ecosystem.count({ where: { publickey, iscore: true } }) > 0
 }
 
 export function sendPaperCashingError(res: Response, { failure, paperHash }: PaperRefusal): void {
     if (failure === 'already-cashed') {
         sendError(res, 409, "Paper already cashed.", 'ALREADY_CASHED', paperHash)
-    } else if (failure === 'unknown-ecosystem') {
-        sendError(res, 400, "Paper targets an unknown ecosystem.", 'INVALID_TX', paperHash)
+    } else if (failure === 'not-core-referent') {
+        sendError(res, 400, "Paper's referent is not this server's core.", 'INVALID_TX', paperHash)
     } else {
         sendCrossVerificationError(res, failure, paperHash)
     }
