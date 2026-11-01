@@ -130,7 +130,7 @@ Save an updated block to the user's blockchain. Also removes any `WaitingTx` inc
 
 ### `PUT /users/sign` — requires block auth
 
-Cash the papers of the submitted last block. It is the only way to cash a paper. For each paper the block holds that this citizen did not issue, the server checks the issuer (registered, active, paper in their saved chain) and that nobody else cashed it. It then registers the paper in this citizen's name, credits the target ecosystem and has the block signed by it, all at once. A block that brings no newly cashed paper changes nothing. When a paper is refused, nothing is cashed and the error names that paper: `{ "error", "code", "tx": "<paper hash>" }`.
+Cash the papers of the submitted last block. It is the only way to cash a paper. For each paper the block holds that this citizen did not issue, the server checks the issuer (registered, active, paper in their saved chain) and that nobody else cashed it. It then registers the paper in this citizen's name and has the block counter-signed by this server's core, the paper's referent, all at once. The core receives nothing: the issuer loses the units, the casher gains the experience. A block that brings no newly cashed paper changes nothing. When a paper is refused, nothing is cashed and the error names that paper: `{ "error", "code", "tx": "<paper hash>" }`.
 
 **Headers:** `x-signature: <signature>`
 
@@ -143,7 +143,7 @@ Cash the papers of the submitted last block. It is the only way to cash a paper.
 - `200` — papers cashed and block signed, or `{ "message": "Nothing new to sign." }`
 - `400` — the block is invalid (same rules as `PUT /users/save`)
 - `400 INVALID_CHAIN` — a paper's issuer has an invalid saved chain
-- `400 INVALID_TX` — a paper targets no known ecosystem
+- `400 INVALID_TX` — a paper's referent is not this server's core
 - `401` — missing `publickey`/`block`/`x-signature`, or the signature doesn't verify (block auth itself rejects missing fields — a bare 400 never reaches this route)
 - `403` — the account is not active
 - `403 UNKNOWN_SENDER` — a paper's issuer is unknown or not active

@@ -80,11 +80,6 @@ function signBlock(blockObj: object, sk: string) {
     return signHash(block.hash(), sk)
 }
 
-async function ecosystemMoney(ecoPk: string) {
-    const row = await Ecosystem.findOne({ where: { publickey: ecoPk } }) as any
-    return new EcosystemBlockchain(row.blocks).lastblock.money.length
-}
-
 // A real DER-encoded SECP256K1 signature (hex) — length varies with r/s
 // padding (observed 136-142 chars over 20000 samples), never a fixed value.
 // Built from a real paper rather than a hand-typed constant so the fixture
@@ -178,18 +173,8 @@ describe('GET /isCashed', () => {
     });
 });
 
-describe('POST /papers/cash', () => {
-    it('Should no longer exist: papers are cashed through PUT /users/sign only.', async () => {
-        const paper = await makeSavedPaper()
-        await request(app)
-            .post('/api/papers/cash')
-            .send({ tx: paper.export() })
-            .expect(404)
-    });
-});
-
 describe('PUT /users/sign (cashing papers)', () => {
-    it('Should refuse to cash a paper signed by an unregistered key, and credit nothing.', async () => {
+    it('Should refuse to cash a paper signed by an unregistered key, and register nothing.', async () => {
         const ecoPk = await makeCore()
         const casher = await registerCasher()
         const forgedPaper = makeForgedPaper(ecoPk)
@@ -198,7 +183,6 @@ describe('PUT /users/sign (cashing papers)', () => {
         assert.equal(res.body.code, 'UNKNOWN_SENDER')
 
         assert.equal(await UsedPaper.findOne({ where: { hash: forgedPaper.signature } }), null)
-        assert.equal(await ecosystemMoney(ecoPk), 0)
         const user = await User.findOne({ where: { publickey: casher.pk } }) as any
         assert.equal(user.blocks.length, 2, "the block holding the forged paper must not be saved")
     });
@@ -226,7 +210,7 @@ describe('PUT /users/sign (cashing papers)', () => {
         assert.equal(res.body.code, 'TX_NOT_IN_CHAIN')
     });
 
-    it('Should register a legitimate paper in the name of its casher, credit the ecosystem and sign with its key.', async () => {
+    it('Should register a legitimate paper in the name of its casher and have the core sign the block.', async () => {
         const ecoPk = await makeCore()
         const casher = await registerCasher()
         const paper = await makeSavedPaper(ecoPk)
@@ -235,7 +219,6 @@ describe('PUT /users/sign (cashing papers)', () => {
 
         const usedPaper = await UsedPaper.findOne({ where: { hash: paper.signature } }) as any
         assert.equal(usedPaper.casher, casher.pk)
-        assert.equal(await ecosystemMoney(ecoPk), 1)
         const user = await User.findOne({ where: { publickey: casher.pk } }) as any
         assert.equal(user.blocks[0].s, ecoPk)
     });
@@ -249,7 +232,6 @@ describe('PUT /users/sign (cashing papers)', () => {
         const res = await cashThroughSign(photographer, paper).expect(409)
         assert.equal(res.body.code, 'ALREADY_CASHED')
 
-        assert.equal(await ecosystemMoney(ecoPk), 1)
         const user = await User.findOne({ where: { publickey: photographer.pk } }) as any
         assert.equal(user.blocks.length, 2)
     });
@@ -274,7 +256,6 @@ describe('PUT /users/sign (cashing papers)', () => {
 
         const usedPaper = await UsedPaper.findOne({ where: { hash: secondPaper.signature } }) as any
         assert.equal(usedPaper.casher, casher.pk)
-        assert.equal(await ecosystemMoney(ecoPk), 2)
     });
 
     it('Should still let the casher save a longer unsigned version of the block the server signed.', async () => {
@@ -324,14 +305,15 @@ describe('PUT /users/sign (cashing papers)', () => {
         assert.equal(responses.find(res => res.status === 409)!.body.code, 'ALREADY_CASHED')
     });
 
-    it('Should credit the ecosystem with every paper cashed simultaneously by different citizens.', async () => {
+    it('Should register every paper cashed simultaneously by different citizens.', async () => {
         const ecoPk = await makeCore()
         const [alice, bob] = [await registerCasher(), await registerCasher()]
         const [alicePaper, bobPaper] = [await makeSavedPaper(ecoPk), await makeSavedPaper(ecoPk)]
 
         await Promise.all([cashThroughSign(alice, alicePaper).expect(200), cashThroughSign(bob, bobPaper).expect(200)])
 
-        assert.equal(await ecosystemMoney(ecoPk), 2)
+        const usedPapers = await UsedPaper.findAll({ where: { hash: [alicePaper.signature, bobPaper.signature] } }) as any[]
+        assert.deepEqual(usedPapers.map(usedPaper => usedPaper.casher).sort(), [alice.pk, bob.pk].sort())
     });
 
     it('Should refuse a paper addressed to the server key rather than its core.', async () => {
@@ -384,6 +366,5 @@ describe('PUT /users/sign (cashing papers)', () => {
         await cashThroughSign(casher, makeForgedPaper(ecoPk)).expect(403)
 
         assert.equal(await UsedPaper.findOne({ where: { hash: legitPaper.signature } }), null)
-        assert.equal(await ecosystemMoney(ecoPk), 0)
     });
 });

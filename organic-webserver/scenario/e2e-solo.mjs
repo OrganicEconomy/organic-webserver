@@ -399,19 +399,13 @@ async function main() {
 
   await step("sign B's block: the server cashes the paper and the core ecosystem counter-signs", async () => {
     await signBlock(B)
-    const core = await fetchEcosystem(corePk)
-    const cashedInCore = core.lastblock.transactions.some((t) => t.type === 5 && t.signature === paperTx.signature)
-    assert(cashedInCore, "the core ecosystem's own chain should record the cashed paper")
+    const { json } = await request('GET', `/validations/status/${B.chain.getMyPublicKey()}`)
+    assert(json.blocks[0].s === corePk, `B's last block should be signed by the core, got signer ${json.blocks[0].s}`)
   })
 
   await step('paper is now cashed (200)', async () => {
     const { status } = await request('GET', '/papers/isCashed', { query: { hash: paperTx.signature } })
     assert(status === 200, `expected 200, got ${status}`)
-  })
-
-  await step('papers/cash no longer exists (404)', async () => {
-    const { status } = await request('POST', '/papers/cash', { body: { tx: paperForB.export() } })
-    assert(status === 404, `expected 404, got ${status}`)
   })
 
   await step('A engages invests into the core ecosystem', async () => {

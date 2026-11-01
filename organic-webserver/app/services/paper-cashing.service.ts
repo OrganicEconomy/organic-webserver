@@ -1,7 +1,6 @@
 import type { Response } from 'express'
 import type { Transaction } from 'sequelize'
 import { TxType, type BlockWire, type TxWire } from 'organic-protocol'
-import { EcosystemBlockchain, TransactionMaker } from 'organic-money/src/index.js'
 import { Ecosystem, UsedPaper } from '../models.js'
 import { findCrossVerificationFailure, sendCrossVerificationError, type CrossVerificationFailure } from './cross-verification.service.js'
 import { sendError } from '../utils/api-error.js'
@@ -64,14 +63,5 @@ export function sendPaperCashingError(res: Response, { failure, paperHash }: Pap
 export async function registerCashedPapers(papers: TxWire[], casherPk: string, transaction: Transaction): Promise<void> {
     for (const paper of papers) {
         await UsedPaper.create({ hash: paper.h, casher: casherPk }, { transaction })
-        await creditTargetEcosystem(paper, transaction)
     }
-}
-
-async function creditTargetEcosystem(paper: TxWire, transaction: Transaction): Promise<void> {
-    const ecoRow = await Ecosystem.findOne({ where: { publickey: paper.p }, transaction, lock: transaction.LOCK.UPDATE }) as any
-
-    const eco = new EcosystemBlockchain(ecoRow.blocks)
-    eco.cashPaper(TransactionMaker.make(paper))
-    await Ecosystem.update({ blocks: eco.export() }, { where: { publickey: paper.p }, transaction })
 }
