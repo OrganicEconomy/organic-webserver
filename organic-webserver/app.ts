@@ -32,12 +32,12 @@ const corsOptions = {
     optionsSuccessStatus: 200
 };
 
-const isTest = process.env.NODE_ENV === 'test'
+const isTest = () => process.env.NODE_ENV === 'test'
 
 const apiLimiter = rateLimit({
     windowMs: 60 * 1000,
     max: 30,
-    skip: () => isTest,
+    skip: isTest,
     standardHeaders: true,
     legacyHeaders: false,
 })
@@ -45,12 +45,14 @@ const apiLimiter = rateLimit({
 const loginLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 10,
-    skip: () => isTest,
+    skip: isTest,
     standardHeaders: true,
     legacyHeaders: false,
 })
 
 const app = express();
+
+app.set('trust proxy', 'loopback')
 
 app.use(express.json());
 app.use(cors(corsOptions))
