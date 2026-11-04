@@ -399,7 +399,11 @@ async function main() {
 
   await step("sign B's block: the server cashes the paper and the core ecosystem counter-signs", async () => {
     await signBlock(B)
-    const { json } = await request('GET', `/validations/status/${B.chain.getMyPublicKey()}`)
+    const mineAuth = timestampAuthHeaders(B.chain.getMyPublicKey(), B.sk)
+    const { json } = await request('GET', '/validations/mine', {
+      headers: mineAuth.headers,
+      query: { publickey: B.chain.getMyPublicKey(), timestamp: mineAuth.timestamp },
+    })
     assert(json.blocks[0].s === corePk, `B's last block should be signed by the core, got signer ${json.blocks[0].s}`)
   })
 
