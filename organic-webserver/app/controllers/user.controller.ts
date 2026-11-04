@@ -19,7 +19,7 @@ export async function postLoginUser(req: Request, res: Response): Promise<void> 
         return;
     }
 
-    const mail = req.body.mail;
+    const mail = normalizeMail(req.body.mail);
     const password = req.body.password;
 
     const user = await User.findOne({ where: { mail: mail } }) as any;
@@ -39,6 +39,10 @@ export async function postLoginUser(req: Request, res: Response): Promise<void> 
     res.send({ publickey, name, mail: userMail, secretkey, status, blocks, devicetoken })
 }
 
+function normalizeMail(mail: string): string {
+    return mail.trim().toLowerCase()
+}
+
 export async function postRegister(req: Request, res: Response): Promise<void> {
     if (!req.body || !req.body.publickey || !req.body.name || !req.body.mail
         || !req.body.password || !req.body.secretkey || !req.body.blocks) {
@@ -51,12 +55,18 @@ export async function postRegister(req: Request, res: Response): Promise<void> {
     // server's core ecosystem in the same breath (below), so there is never
     // a window where a validated citizen exists with no one able to
     // validate the next one.
+    const mail = normalizeMail(req.body.mail)
+    if (await User.findOne({ where: { mail } })) {
+        sendError(res, 409, "This mail is already used by another account.");
+        return
+    }
+
     const isBootstrap = (await User.count()) === 0
 
     const user: { publickey: string, name: string, mail: string, password: string, secretkey: string, birthdate: string | null, validatorpk: string | null, devicetoken: string, blocks: BlockWire[], status: MembershipStatus } = {
         publickey: req.body.publickey,
         name: req.body.name,
-        mail: req.body.mail,
+        mail,
         password: await bcrypt.hash(req.body.password, 10),
         secretkey: req.body.secretkey,
         birthdate: req.body.birthdate ?? null,

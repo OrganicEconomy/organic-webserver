@@ -98,6 +98,15 @@ describe('POST /users/login', () => {
             .expect(200);
     });
 
+    it('Should find the account whatever the case and surrounding spaces of the given mail.', async () => {
+        await registerNewCitizen("Casual").expect(200)
+
+        await request(app)
+            .post('/api/users/login')
+            .send({ mail: " CASUAL@Mail.com ", password: "a" })
+            .expect(200);
+    });
+
     it('Should issue a devicetoken and revoke the previous one.', async () => {
         const mail = "device@test.test"
         const password = "test"
@@ -288,6 +297,24 @@ describe('POST /users/register', () => {
             })
             .expect(400)
         assert.equal(await User.count({ where: { publickey: TEST_PK } }), 0)
+    });
+
+    it('Should refuse a mail already used by another account, whatever its case and surrounding spaces.', async () => {
+        await registerNewCitizen("Taken").expect(200)
+
+        const bc = new CitizenBlockchain()
+        const sk = bc.makeBirthBlock("Copycat", new Date(2000, 0, 1), null)
+        await request(app)
+            .post('/api/users/register')
+            .send({
+                publickey: bc.getMyPublicKey(),
+                name: "Copycat",
+                mail: " TAKEN@mail.com ",
+                password: "a",
+                secretkey: sk,
+                blocks: bc.export(),
+            })
+            .expect(409)
     });
 
     it('Should reject a non-bootstrap registration whose blockchain is already validated.', async () => {
