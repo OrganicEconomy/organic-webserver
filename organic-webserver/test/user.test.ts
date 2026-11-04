@@ -243,8 +243,8 @@ describe('POST /users/register', () => {
 
         const bc = new CitizenBlockchain()
         const sk = "8201979f77794c943300a0070bb8320eccf57a68e10f0a667d8a5a075eb4dfcb"
-        const pk = "0206ffd8f4fe843f5f7183179dcf36f550326813f56ec824911abca9c9d1cd7834"
         bc.makeBirthBlock("Candidate", new Date(2012, 11, 28), sk)
+        const pk = bc.getMyPublicKey()
 
         const res = await request(app)
             .post('/api/users/register')
@@ -270,6 +270,24 @@ describe('POST /users/register', () => {
         // No second core ecosystem gets created for a non-bootstrap registration.
         const cores = await Ecosystem.count({ where: { iscore: true } })
         assert.equal(cores, 0)
+    });
+
+    it('Should refuse a publickey that is not the owner of the given blockchain.', async () => {
+        const bc = new CitizenBlockchain()
+        const sk = bc.makeBirthBlock("Impostor", new Date(2000, 0, 1), null)
+
+        await request(app)
+            .post('/api/users/register')
+            .send({
+                publickey: TEST_PK,
+                name: "Impostor",
+                mail: "impostor@mail.com",
+                password: "a",
+                secretkey: sk,
+                blocks: bc.export(),
+            })
+            .expect(400)
+        assert.equal(await User.count({ where: { publickey: TEST_PK } }), 0)
     });
 
     it('Should reject a non-bootstrap registration whose blockchain is already validated.', async () => {

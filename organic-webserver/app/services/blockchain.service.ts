@@ -28,6 +28,12 @@ export function assertWaitingValidation(blocks: BlockWire[]): void {
     blockchain.assertIsValid()
 }
 
+export function assertIsOwnedBy(blocks: BlockWire[], publickey: string): void {
+    if (new CitizenBlockchain(blocks).getMyPublicKey() !== publickey) {
+        throw new Error('Given blockchain is not owned by the given publickey.')
+    }
+}
+
 export type BlockUpdateFailure = 'invalid-block' | 'not-chaining'
 
 export type BlockUpdate = { blocks: BlockWire[] } | { failure: BlockUpdateFailure }

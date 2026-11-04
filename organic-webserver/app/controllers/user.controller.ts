@@ -6,7 +6,7 @@ import bcrypt from 'bcryptjs'
 import type { BlockWire, MembershipStatus } from 'organic-protocol'
 import { publicFromPrivate } from 'organic-money/src/index.js'
 
-import { validateBlockchain, assertWaitingValidation, updateLastBlock, signLastBlock, type BlockUpdateFailure } from '../services/blockchain.service.js'
+import { validateBlockchain, assertWaitingValidation, assertIsOwnedBy, updateLastBlock, signLastBlock, type BlockUpdateFailure } from '../services/blockchain.service.js'
 import { createEcosystem } from '../services/ecosystem.service.js'
 import { findPapersToCash, holdsOnlyPapersCashedBy, registerCashedPapers, sendPaperCashingError } from '../services/paper-cashing.service.js'
 import { sendError } from '../utils/api-error.js'
@@ -67,6 +67,7 @@ export async function postRegister(req: Request, res: Response): Promise<void> {
     };
 
     try {
+        assertIsOwnedBy(user.blocks, user.publickey)
         if (isBootstrap) {
             user.blocks = validateBlockchain(user.blocks)
         } else {
