@@ -7,7 +7,8 @@
  * second citizen -> online payment -> cash-in -> ecosystem roles -> invest
  * engagement -> payer order (auto-routed, no claim step) -> salary
  * distribution -> paper (targets the core) -> paper cash-in -> reject
- * double cash-in.
+ * double cash-in -> a running engagement survives the block closed by a
+ * paper cash-in.
  *
  * Usage:
  *   npm run e2e      (POSIX)
@@ -455,6 +456,34 @@ async function main() {
       headers: authAuth.headers,
     })
     assert(status === 200, `expected 200, got ${status}: ${JSON.stringify(json)}`)
+  })
+
+  await step('B engages invests into the core ecosystem for 3 days', async () => {
+    const tx = B.chain.engageInvests(B.sk, corePk, 1, 3)
+    await sendEcosystemTx(B, corePk, tx)
+  })
+
+  let secondPaperTx
+  await step('A generates another paper for B', async () => {
+    secondPaperTx = A.chain.generatePaper(A.sk, 1, corePk)
+    await saveBlock(A)
+  })
+
+  await step("B cashes it while his engagement is still running, and the core's signature closes his block", async () => {
+    B.chain.cashPaper(TransactionMaker.make(secondPaperTx.export()))
+    await signBlock(B)
+    const mineAuth = timestampAuthHeaders(B.chain.getMyPublicKey(), B.sk)
+    const { json } = await request('GET', '/validations/mine', {
+      headers: mineAuth.headers,
+      query: { publickey: B.chain.getMyPublicKey(), timestamp: mineAuth.timestamp },
+    })
+    B.chain = new CitizenBlockchain(json.blocks)
+    assert(B.chain.lastblock.isSigned(), "B's last block should now be signed")
+  })
+
+  await step('B pays A: his new block carries the running engagement and is saved', async () => {
+    B.chain.pay(B.sk, A.chain.getMyPublicKey(), 1)
+    await saveBlock(B)
   })
 }
 
