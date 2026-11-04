@@ -570,6 +570,27 @@ describe('PUT /users/save', () => {
         assert.equal(user.blocks.length, 2)
     });
 
+    it('Should refuse a block whose money holds ids no transaction brought into the wallet.', async () => {
+        const bc = new CitizenBlockchain()
+        const sk = bc.startBlockchain("Forger", new Date(), SECRETKEY)
+        const pk = bc.getMyPublicKey()
+        await registerActiveCitizen(bc, sk)
+        bc.pay(sk, TEST_PK, 1)
+        const inventedMoneyId = dateToInt(new Date()) * 1000 + 999
+        bc.lastblock.money.push(inventedMoneyId)
+
+        const forgedBlock: BlockWire = bc.lastblock.export()
+
+        await request(app)
+            .put('/api/users/save')
+            .set('x-signature', signBlock(forgedBlock, sk))
+            .send({ publickey: pk, block: forgedBlock, devicetoken: "current-device" })
+            .expect(400)
+
+        const user = await User.findOne({ where: { publickey: pk } }) as any
+        assert.equal(user.blocks.length, 2)
+    });
+
     it('Should return 200 and update given new block if not new.', async () => {
         const bc = new CitizenBlockchain()
         const sk = bc.startBlockchain("testName", new Date(), SECRETKEY)
