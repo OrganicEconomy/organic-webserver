@@ -10,12 +10,14 @@ import { validateBlockchain, assertWaitingValidation, assertIsOwnedBy, updateLas
 import { createEcosystem } from '../services/ecosystem.service.js'
 import { findPapersToCash, holdsOnlyPapersCashedBy, registerCashedPapers, sendPaperCashingError } from '../services/paper-cashing.service.js'
 import { sendError } from '../utils/api-error.js'
+import { hasTextFields, findTooLongField } from '../utils/request-fields.util.js'
 
 const SECRETKEY = process.env.ORGANIC_SECRET_KEY as string
+const REGISTER_MAX_LENGTHS: Record<string, number> = { name: 100, mail: 254 }
 const UNKNOWN_MAIL_HASH = bcrypt.hashSync(randomUUID(), 10)
 
 export async function postLoginUser(req: Request, res: Response): Promise<void> {
-    if (!req.body || !req.body.mail || !req.body.password) {
+    if (!hasTextFields(req.body, ['mail', 'password'])) {
         sendError(res, 400, "Fields 'mail' and 'password' are needed");
         return;
     }
@@ -45,8 +47,7 @@ function normalizeMail(mail: string): string {
 }
 
 export async function postRegister(req: Request, res: Response): Promise<void> {
-    if (!req.body || !req.body.publickey || !req.body.name || !req.body.mail
-        || !req.body.password || !req.body.secretkey || !req.body.blocks) {
+    if (!hasTextFields(req.body, ['publickey', 'name', 'mail', 'password', 'secretkey']) || !req.body.blocks) {
         sendError(res, 400, "Fields 'publickey', 'name', 'mail', 'password', 'secretkey' and 'blocks' are needed.");
         return;
     }
@@ -56,6 +57,12 @@ export async function postRegister(req: Request, res: Response): Promise<void> {
     // server's core ecosystem in the same breath (below), so there is never
     // a window where a validated citizen exists with no one able to
     // validate the next one.
+    const tooLongField = findTooLongField(req.body, REGISTER_MAX_LENGTHS)
+    if (tooLongField) {
+        sendError(res, 400, `Field '${tooLongField}' must be at most ${REGISTER_MAX_LENGTHS[tooLongField]} characters long.`);
+        return
+    }
+
     const mail = normalizeMail(req.body.mail)
     if (await User.findOne({ where: { mail } })) {
         sendError(res, 409, "This mail is already used by another account.");
@@ -224,7 +231,7 @@ export async function putSignAndSaveUser(req: Request, res: Response): Promise<v
  * bcrypt hash and the re-encrypted sk without ever reading either.
  */
 export async function postChangePassword(req: Request, res: Response): Promise<void> {
-    if (!req.body?.newpassword || !req.body?.secretkey) {
+    if (!hasTextFields(req.body, ['newpassword', 'secretkey'])) {
         sendError(res, 400, "Fields 'newpassword' and 'secretkey' are needed.");
         return;
     }
