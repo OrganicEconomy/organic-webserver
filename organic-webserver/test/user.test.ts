@@ -47,6 +47,14 @@ function registerNewCitizen(name: string) {
         })
 }
 
+async function averageLoginDuration(mail: string, password: string, attempts = 3) {
+    const start = Date.now()
+    for (let i = 0; i < attempts; i++) {
+        await request(app).post('/api/users/login').send({ mail, password }).expect(404)
+    }
+    return (Date.now() - start) / attempts
+}
+
 async function registerPendingCitizen() {
     const bc = new CitizenBlockchain()
     const sk = bc.makeBirthBlock("Pending", new Date(), null)
@@ -105,6 +113,16 @@ describe('POST /users/login', () => {
             .post('/api/users/login')
             .send({ mail: " CASUAL@Mail.com ", password: "a" })
             .expect(200);
+    });
+
+    it('Should take as long for an unknown mail as for a wrong password.', async () => {
+        await registerNewCitizen("Timed").expect(200)
+
+        const unknownMailDuration = await averageLoginDuration("nobody@mail.com", "a")
+        const wrongPasswordDuration = await averageLoginDuration("timed@mail.com", "wrong")
+
+        assert.ok(unknownMailDuration > wrongPasswordDuration / 2,
+            `unknown mail answered in ${unknownMailDuration}ms, wrong password in ${wrongPasswordDuration}ms`)
     });
 
     it('Should issue a devicetoken and revoke the previous one.', async () => {

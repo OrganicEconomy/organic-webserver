@@ -12,6 +12,7 @@ import { findPapersToCash, holdsOnlyPapersCashedBy, registerCashedPapers, sendPa
 import { sendError } from '../utils/api-error.js'
 
 const SECRETKEY = process.env.ORGANIC_SECRET_KEY as string
+const UNKNOWN_MAIL_HASH = bcrypt.hashSync(randomUUID(), 10)
 
 export async function postLoginUser(req: Request, res: Response): Promise<void> {
     if (!req.body || !req.body.mail || !req.body.password) {
@@ -23,7 +24,7 @@ export async function postLoginUser(req: Request, res: Response): Promise<void> 
     const password = req.body.password;
 
     const user = await User.findOne({ where: { mail: mail } }) as any;
-    const isPasswordValid = user !== null && await bcrypt.compare(password, user.password);
+    const isPasswordValid = await bcrypt.compare(password, user?.password ?? UNKNOWN_MAIL_HASH) && user !== null;
 
     if (!isPasswordValid) {
         sendError(res, 404, "User not found or invalid password");
