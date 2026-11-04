@@ -5,6 +5,7 @@ import {
 } from "../controllers/ecosystem.controller.js";
 import { postEcosystemTx, postDistributeSalary } from "../controllers/ecosystem-tx.controller.js";
 import { requireTimestampAuth } from "../middleware/auth.middleware.js";
+import { exclusively } from "../utils/exclusive-run.util.js";
 
 const router = Router();
 
@@ -34,8 +35,8 @@ router.get("/:pk", getEcosystemInfo);
 
 router.put("/:pk/meta", requireTimestampAuth, putEcosystemMeta);
 
-router.post("/:pk/tx", postEcosystemTx);
+router.post("/:pk/tx", exclusively(postEcosystemTx));
 
-router.post("/:pk/distribute", requireTimestampAuth, postDistributeSalary);
+router.post("/:pk/distribute", requireTimestampAuth, exclusively(postDistributeSalary));
 
 export default router;
