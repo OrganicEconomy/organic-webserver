@@ -46,12 +46,8 @@ export async function createWaitingTx(req: Request, res: Response): Promise<void
         tx: tx
     };
 
-    try {
-        await WaitingTx.create(waitingtx)
-        res.send({ message: "Transaction successfully saved." })
-    } catch (err) {
-        sendError(res, 500, (err as Error).message || "Some error occurred while creating the transaction.")
-    }
+    await WaitingTx.create(waitingtx)
+    res.send({ message: "Transaction successfully saved." })
 }
 
 async function isAlreadySent(tx: TxWire): Promise<boolean> {

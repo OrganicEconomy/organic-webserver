@@ -10,12 +10,14 @@ import { validateBlockchain, assertWaitingValidation, assertIsOwnedBy, updateLas
 import { createEcosystem } from '../services/ecosystem.service.js'
 import { findPapersToCash, holdsOnlyPapersCashedBy, registerCashedPapers, sendPaperCashingError } from '../services/paper-cashing.service.js'
 import { sendError } from '../utils/api-error.js'
+import { hasTextFields, findTooLongField } from '../utils/request-fields.util.js'
 
 const SECRETKEY = process.env.ORGANIC_SECRET_KEY as string
+const REGISTER_MAX_LENGTHS: Record<string, number> = { name: 100, mail: 254 }
 const UNKNOWN_MAIL_HASH = bcrypt.hashSync(randomUUID(), 10)
 
 export async function postLoginUser(req: Request, res: Response): Promise<void> {
-    if (!req.body || !req.body.mail || !req.body.password) {
+    if (!hasTextFields(req.body, ['mail', 'password'])) {
         sendError(res, 400, "Fields 'mail' and 'password' are needed");
         return;
     }
@@ -45,8 +47,7 @@ function normalizeMail(mail: string): string {
 }
 
 export async function postRegister(req: Request, res: Response): Promise<void> {
-    if (!req.body || !req.body.publickey || !req.body.name || !req.body.mail
-        || !req.body.password || !req.body.secretkey || !req.body.blocks) {
+    if (!hasTextFields(req.body, ['publickey', 'name', 'mail', 'password', 'secretkey']) || !req.body.blocks) {
         sendError(res, 400, "Fields 'publickey', 'name', 'mail', 'password', 'secretkey' and 'blocks' are needed.");
         return;
     }
@@ -56,6 +57,12 @@ export async function postRegister(req: Request, res: Response): Promise<void> {
     // server's core ecosystem in the same breath (below), so there is never
     // a window where a validated citizen exists with no one able to
     // validate the next one.
+    const tooLongField = findTooLongField(req.body, REGISTER_MAX_LENGTHS)
+    if (tooLongField) {
+        sendError(res, 400, `Field '${tooLongField}' must be at most ${REGISTER_MAX_LENGTHS[tooLongField]} characters long.`);
+        return
+    }
+
     const mail = normalizeMail(req.body.mail)
     if (await User.findOne({ where: { mail } })) {
         sendError(res, 409, "This mail is already used by another account.");
@@ -89,15 +96,11 @@ export async function postRegister(req: Request, res: Response): Promise<void> {
         return
     }
 
-    try {
-        const data = await User.create(user) as any
-        if (isBootstrap) {
-            await createEcosystem(data.publickey, process.env.ORGANIC_SERVER_NAME || 'Organic server')
-        }
-        res.send({ publickey: data.publickey, status: data.status, blocks: data.blocks, devicetoken: data.devicetoken })
-    } catch (err) {
-        sendError(res, 500, (err as Error).message || "Some error occurred while creating the User.");
+    const data = await User.create(user) as any
+    if (isBootstrap) {
+        await createEcosystem(data.publickey, process.env.ORGANIC_SERVER_NAME || 'Organic server')
     }
+    res.send({ publickey: data.publickey, status: data.status, blocks: data.blocks, devicetoken: data.devicetoken })
 }
 
 async function removeWaitingTransactions(lastblock: BlockWire, targetpk: string) {
@@ -157,16 +160,12 @@ export async function putSaveUser(req: Request, res: Response): Promise<void> {
         return
     }
 
-    try {
-        await User.update(
-            { blocks: blocks },
-            { where: { publickey: publickey } }
-        )
-        await removeWaitingTransactions(blocks[0], publickey)
-        res.send({ message: "User was updated successfully." });
-    } catch (err) {
-        sendError(res, 500, `Error updating User with pk=${publickey} : "${err}"`);
-    }
+    await User.update(
+        { blocks: blocks },
+        { where: { publickey: publickey } }
+    )
+    await removeWaitingTransactions(blocks[0], publickey)
+    res.send({ message: "User was updated successfully." });
 }
 
 const BLOCK_UPDATE_ERRORS: Record<BlockUpdateFailure, { status: number, message: string }> = {
@@ -217,23 +216,12 @@ export async function putSignAndSaveUser(req: Request, res: Response): Promise<v
         return
     }
 
-    let newBlocks
-    try {
-        newBlocks = await signLastBlock(update.blocks)
-    } catch (err) {
-        sendError(res, 500, `Error signing block for user pk=${publickey} : "${err}"`);
-        return
-    }
-
-    try {
-        await sequelize.transaction(async (transaction) => {
-            await registerCashedPapers(papersToCash.papers, publickey, transaction)
-            await User.update({ blocks: newBlocks }, { where: { publickey }, transaction })
-        })
-        res.send({ message: "User was updated successfully." });
-    } catch (err) {
-        sendError(res, 500, `Error updating User with pk=${publickey} : "${err}"`);
-    }
+    const newBlocks = await signLastBlock(update.blocks)
+    await sequelize.transaction(async (transaction) => {
+        await registerCashedPapers(papersToCash.papers, publickey, transaction)
+        await User.update({ blocks: newBlocks }, { where: { publickey }, transaction })
+    })
+    res.send({ message: "User was updated successfully." });
 }
 
 /**
@@ -243,7 +231,7 @@ export async function putSignAndSaveUser(req: Request, res: Response): Promise<v
  * bcrypt hash and the re-encrypted sk without ever reading either.
  */
 export async function postChangePassword(req: Request, res: Response): Promise<void> {
-    if (!req.body?.newpassword || !req.body?.secretkey) {
+    if (!hasTextFields(req.body, ['newpassword', 'secretkey'])) {
         sendError(res, 400, "Fields 'newpassword' and 'secretkey' are needed.");
         return;
     }

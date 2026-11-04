@@ -8,6 +8,7 @@ import txRouter from "./app/routes/waiting-tx.routes.js";
 import infoRouter from "./app/routes/info.routes.js";
 import validationsRouter from "./app/routes/validations.routes.js";
 import ecosystemsRouter from "./app/routes/ecosystems.routes.js";
+import { errorHandler } from "./app/utils/error-handler.js";
 
 if (!process.env.ORGANIC_SECRET_KEY) {
     throw new Error('Missing ORGANIC_SECRET_KEY environment variable');
@@ -28,7 +29,6 @@ const corsOptions = {
     origin: ['http://localhost:4200', 'https://localhost:4200', ...extraOrigins],
     methods: ['GET', 'POST', 'PUT'],
     allowedHeaders: ['Content-Type', 'Authorization', 'x-signature'],
-    credentials: true,
     optionsSuccessStatus: 200
 };
 
@@ -53,16 +53,13 @@ const loginLimiter = rateLimit({
 const app = express();
 
 app.set('trust proxy', 'loopback')
+app.disable('x-powered-by')
 
 app.use(express.json());
 app.use(cors(corsOptions))
 
-try {
-    await sequelize.sync()
-    console.log("Synced db.");
-} catch (err) {
-    console.log("Failed to sync db: " + (err as Error).message);
-}
+await sequelize.sync()
+console.log("Synced db.");
 
 // The '/api' prefix also rate-limits '/api/v1/*'.
 app.use(['/api/v1/users/login', '/api/users/login'], loginLimiter)
@@ -80,5 +77,6 @@ api.use('/ecosystems', ecosystemsRouter)
 
 app.use('/api/v1', api)
 app.use('/api', api)
+app.use(errorHandler)
 
 export default app;

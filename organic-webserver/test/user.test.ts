@@ -115,6 +115,13 @@ describe('POST /users/login', () => {
             .expect(200);
     });
 
+    it('Should return 400 for a mail that is not a string.', async () => {
+        await request(app)
+            .post('/api/users/login')
+            .send({ mail: { $ne: "" }, password: "a" })
+            .expect(400);
+    });
+
     it('Should take as long for an unknown mail as for a wrong password.', async () => {
         await registerNewCitizen("Timed").expect(200)
 
@@ -317,6 +324,55 @@ describe('POST /users/register', () => {
         assert.equal(await User.count({ where: { publickey: TEST_PK } }), 0)
     });
 
+    it('Should return 400 for a mail that is not a string.', async () => {
+        const bc = new CitizenBlockchain()
+        const sk = bc.makeBirthBlock("Listed", new Date(2000, 0, 1), null)
+        await request(app)
+            .post('/api/users/register')
+            .send({
+                publickey: bc.getMyPublicKey(),
+                name: "Listed",
+                mail: ["listed@mail.com"],
+                password: "a",
+                secretkey: sk,
+                blocks: bc.export(),
+            })
+            .expect(400)
+    });
+
+    it('Should return 400 for a name longer than 100 characters.', async () => {
+        const name = "N".repeat(101)
+        const bc = new CitizenBlockchain()
+        const sk = bc.makeBirthBlock(name, new Date(2000, 0, 1), null)
+        await request(app)
+            .post('/api/users/register')
+            .send({
+                publickey: bc.getMyPublicKey(),
+                name,
+                mail: "long-name@mail.com",
+                password: "a",
+                secretkey: sk,
+                blocks: bc.export(),
+            })
+            .expect(400)
+    });
+
+    it('Should return 400 for a mail longer than 254 characters.', async () => {
+        const bc = new CitizenBlockchain()
+        const sk = bc.makeBirthBlock("LongMail", new Date(2000, 0, 1), null)
+        await request(app)
+            .post('/api/users/register')
+            .send({
+                publickey: bc.getMyPublicKey(),
+                name: "LongMail",
+                mail: `${"m".repeat(250)}@mail.com`,
+                password: "a",
+                secretkey: sk,
+                blocks: bc.export(),
+            })
+            .expect(400)
+    });
+
     it('Should refuse a mail already used by another account, whatever its case and surrounding spaces.', async () => {
         await registerNewCitizen("Taken").expect(200)
 
@@ -402,6 +458,23 @@ describe('POST /users/password', () => {
         const user = await User.findOne({ where: { publickey: pk } }) as any
         assert.equal(user.secretkey, "encrypted-with-new-password")
         assert.ok(await bcrypt.compare("newpassword", user.password))
+    });
+
+    it('Should return 400 and keep the stored secretkey for a secretkey that is not a string.', async () => {
+        await User.destroy({ where: {}, truncate: true })
+        const { sk, pk } = await registerUser()
+
+        const ts = Math.floor(Date.now() / 1000)
+        const sig = signHash(hashTimestampAuth(pk, ts), sk)
+
+        await request(app)
+            .post('/api/users/password')
+            .set('x-signature', sig)
+            .send({ publickey: pk, timestamp: ts, newpassword: "newpassword", secretkey: { encrypted: true } })
+            .expect(400)
+
+        const user = await User.findOne({ where: { publickey: pk } }) as any
+        assert.equal(user.secretkey, "encrypted-with-old-password")
     });
 
     it("Should not let an attacker authenticated in the query change someone else's password.", async () => {
