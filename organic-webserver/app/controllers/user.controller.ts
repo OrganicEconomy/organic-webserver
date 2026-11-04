@@ -10,7 +10,6 @@ import { validateBlockchain, assertWaitingValidation, updateLastBlock, signLastB
 import { createEcosystem } from '../services/ecosystem.service.js'
 import { findPapersToCash, holdsOnlyPapersCashedBy, registerCashedPapers, sendPaperCashingError } from '../services/paper-cashing.service.js'
 import { sendError } from '../utils/api-error.js'
-import { runExclusively } from '../utils/exclusive-run.util.js'
 
 const SECRETKEY = process.env.ORGANIC_SECRET_KEY as string
 
@@ -169,10 +168,6 @@ function sendBlockUpdateError(res: Response, failure: BlockUpdateFailure): void 
 }
 
 export async function putSignAndSaveUser(req: Request, res: Response): Promise<void> {
-    await runExclusively(() => signAndSaveUser(req, res))
-}
-
-async function signAndSaveUser(req: Request, res: Response): Promise<void> {
     if (!req.body || !req.body.publickey || !req.body.block) {
         sendError(res, 400, "Fields 'publickey' and 'block' are needed.");
         return;

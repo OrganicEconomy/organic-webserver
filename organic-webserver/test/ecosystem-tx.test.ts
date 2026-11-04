@@ -189,6 +189,36 @@ describe('POST /ecosystems/:pk/tx', () => {
         assert.equal(waiting[0].tx.t, 13, "queued transaction should be an EARN (13)")
     });
 
+    it('Should apply only one of two simultaneous orders spending the same invests.', async () => {
+        const { pk: adminPk, sk: adminSk, bc: adminBc } = await makeActiveCitizen("Admin7")
+        const ecoPk = await makeEcosystem(adminPk)
+        const { pk: firstSupplierPk } = await makeActiveCitizen("FirstSupplier")
+        const { pk: secondSupplierPk } = await makeActiveCitizen("SecondSupplier")
+
+        const payerTx = adminBc.setPayer(adminSk, ecoPk, adminPk, -1)
+        await User.update({ blocks: adminBc.export() }, { where: { publickey: adminPk } })
+        await request(app).post(`/api/v1/ecosystems/${ecoPk}/tx`).send({ tx: payerTx.export() }).expect(200)
+
+        const citizen = await makeActiveCitizen("Engager2")
+        citizen.bc.createMoneyAndInvests(citizen.sk)
+        const engageTx = citizen.bc.engageInvests(citizen.sk, ecoPk, 1, 30)
+        await User.update({ blocks: citizen.bc.export() }, { where: { publickey: citizen.pk } })
+        await request(app).post(`/api/v1/ecosystems/${ecoPk}/tx`).send({ tx: engageTx.export() }).expect(200)
+
+        const sameInvests = (await reload(ecoPk)).invests.slice(0, 1)
+        const firstOrder = adminBc.payerOrder(adminSk, ecoPk, firstSupplierPk, sameInvests)
+        const secondOrder = adminBc.payerOrder(adminSk, ecoPk, secondSupplierPk, sameInvests)
+        await User.update({ blocks: adminBc.export() }, { where: { publickey: adminPk } })
+
+        const responses = await Promise.all([firstOrder, secondOrder].map(order =>
+            request(app).post(`/api/v1/ecosystems/${ecoPk}/tx`).send({ tx: order.export() })
+        ))
+
+        assert.deepEqual(responses.map(res => res.status).sort(), [200, 400])
+        const payouts = await WaitingTx.count({ where: { target: [firstSupplierPk, secondSupplierPk] } })
+        assert.equal(payouts, 1)
+    });
+
     it('Should apply the payer-order payout directly when the beneficiary is another ecosystem on this server.', async () => {
         const { pk: adminPk, sk: adminSk, bc: adminBc } = await makeActiveCitizen("Admin6")
         const ecoPk = await makeEcosystem(adminPk, "Buyer")

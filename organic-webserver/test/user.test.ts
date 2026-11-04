@@ -32,6 +32,21 @@ async function registerActiveCitizen(bc: InstanceType<typeof CitizenBlockchain>,
     })
 }
 
+function registerNewCitizen(name: string) {
+    const bc = new CitizenBlockchain()
+    const sk = bc.makeBirthBlock(name, new Date(2000, 0, 1), null)
+    return request(app)
+        .post('/api/users/register')
+        .send({
+            publickey: bc.getMyPublicKey(),
+            name,
+            mail: `${name.toLowerCase()}@mail.com`,
+            password: "a",
+            secretkey: sk,
+            blocks: bc.export(),
+        })
+}
+
 async function registerPendingCitizen() {
     const bc = new CitizenBlockchain()
     const sk = bc.makeBirthBlock("Pending", new Date(), null)
@@ -203,6 +218,17 @@ describe('POST /users/register', () => {
         const eco = new EcosystemBlockchain(cores[0].blocks)
         assert.equal(eco.isValidated(), true)
         assert.ok(eco.isAdmin(pk), "the founder should be admin of the core ecosystem")
+    });
+
+    it('Should make only one of two simultaneous first registrations active.', async () => {
+        await Ecosystem.destroy({ where: {}, truncate: true })
+        await User.destroy({ where: {}, truncate: true })
+
+        const responses = await Promise.all([registerNewCitizen("First"), registerNewCitizen("Second")])
+
+        const statuses = responses.map(res => res.body.status).sort()
+        assert.deepEqual(statuses, ['active', 'pending-validation'])
+        assert.equal(await Ecosystem.count({ where: { iscore: true } }), 1)
     });
 
     it("Should return 200 with status 'pending-validation' and no validatorpk for any account after the first.", async () => {
@@ -568,6 +594,27 @@ describe('PUT /users/save', () => {
 
         const user = await User.findOne({ where: { publickey: pk } }) as any
         assert.equal(user.blocks.length, 2)
+    });
+
+    it('Should not let an older version of the last block overwrite a newer one saved at the same time.', async () => {
+        const bc = new CitizenBlockchain()
+        const sk = bc.startBlockchain("Racer", new Date(), SECRETKEY)
+        const pk = bc.getMyPublicKey()
+        await registerActiveCitizen(bc, sk)
+        bc.pay(sk, TEST_PK, 1)
+        const olderVersion: BlockWire = bc.lastblock.export()
+        bc.setAdmin(sk, TEST_PK, TEST_PK)
+        const newerVersion: BlockWire = bc.lastblock.export()
+
+        await Promise.all([newerVersion, olderVersion].map(block =>
+            request(app)
+                .put('/api/users/save')
+                .set('x-signature', signBlock(block, sk))
+                .send({ publickey: pk, block, devicetoken: "current-device" })
+        ))
+
+        const user = await User.findOne({ where: { publickey: pk } }) as any
+        assert.equal(user.blocks[0].x.length, newerVersion.x.length)
     });
 
     it('Should refuse a block whose money holds ids no transaction brought into the wallet.', async () => {

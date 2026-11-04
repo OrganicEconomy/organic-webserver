@@ -202,6 +202,22 @@ describe('POST /ecosystems/:pk/distribute', () => {
         assert.equal(eco.lastblock.money.length, 1, "1 unit should remain unspent, kept for a future round")
     });
 
+    it('Should pay salaries once and answer both of two simultaneous distributions.', async () => {
+        const { adminPk, adminSk, actorPk, ecoPk } = await setupTwoActorEcosystem("Actor5", "Payer5", 2)
+
+        const responses = await Promise.all([1, 2].map(() => {
+            const { ts, sig } = timestampAuth(adminPk, adminSk)
+            return request(app)
+                .post(`/api/v1/ecosystems/${ecoPk}/distribute`)
+                .set('x-signature', sig)
+                .send({ publickey: adminPk, timestamp: ts })
+        }))
+
+        assert.deepEqual(responses.map(res => res.status), [200, 200])
+        const payouts = await WaitingTx.count({ where: { target: [adminPk, actorPk] } })
+        assert.equal(payouts, 2, "one round funded, so one payout per actor")
+    });
+
     it('Should return 403 for a payer who is not an admin.', async () => {
         const { bc: adminBc, sk: adminSk, pk: adminPk } = await makeActiveCitizen("Admin4")
         const ecoPk = await makeEcosystem(adminPk)
