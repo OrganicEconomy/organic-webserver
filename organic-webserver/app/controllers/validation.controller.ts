@@ -2,7 +2,7 @@ import type { Request, Response } from 'express'
 import { User } from '../models.js'
 import { sendError } from '../utils/api-error.js'
 import { isCoreAdmin, mergeValidationBlock } from '../services/validation.service.js'
-import type { ValidationListEntry } from 'organic-protocol'
+import type { ValidationListEntry, ValidationStatusResponse, MyValidationResponse } from 'organic-protocol'
 
 /**
  * GET /validations — core admins only. Lists citizens waiting for approval,
@@ -43,14 +43,26 @@ export async function getValidation(req: Request, res: Response): Promise<void> 
     res.send({ name: candidate.name, blocks: candidate.blocks })
 }
 
-/** GET /validations/status/:pk — public, for the candidate to poll from any device. */
+/** GET /validations/mine — the candidate's own chain, to adopt it once validated. */
+export async function getMyValidation(req: Request, res: Response): Promise<void> {
+    const account = await User.findOne({ where: { publickey: res.locals.authenticatedPk } }) as any
+    if (!account) {
+        res.status(404).send()
+        return
+    }
+    const response: MyValidationResponse = { status: account.status, blocks: account.blocks }
+    res.send(response)
+}
+
+/** GET /validations/status/:pk — public, so the status only: the chain would reveal the citizen's identity and history. */
 export async function getValidationStatus(req: Request, res: Response): Promise<void> {
     const candidate = await User.findOne({ where: { publickey: req.params.pk } }) as any
     if (!candidate) {
         res.status(404).send()
         return
     }
-    res.send({ status: candidate.status, blocks: candidate.blocks })
+    const response: ValidationStatusResponse = { status: candidate.status }
+    res.send(response)
 }
 
 /**

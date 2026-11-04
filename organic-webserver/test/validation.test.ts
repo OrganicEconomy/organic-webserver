@@ -127,20 +127,43 @@ describe('GET /validations/:pk', () => {
 });
 
 describe('GET /validations/status/:pk', () => {
-    it('Should return the status and current blocks of a known account, no auth required.', async () => {
-        const { pk, bc } = await makePendingCandidate()
+    it('Should return only the status of a known account, no auth required.', async () => {
+        const { pk } = await makePendingCandidate()
 
         const res = await request(app)
             .get(`/api/v1/validations/status/${pk}`)
             .expect(200)
-        assert.equal(res.body.status, 'pending-validation')
-        assert.deepEqual(res.body.blocks, bc.export())
+        assert.deepEqual(res.body, { status: 'pending-validation' })
     });
 
     it('Should return 404 for an unknown pk.', async () => {
         await request(app)
             .get('/api/v1/validations/status/unknown-pk')
             .expect(404)
+    });
+});
+
+describe('GET /validations/mine', () => {
+    it('Should return 401 without a valid timestamp signature.', async () => {
+        const { pk } = await makePendingCandidate()
+
+        await request(app)
+            .get('/api/v1/validations/mine')
+            .query({ publickey: pk, timestamp: Math.floor(Date.now() / 1000) })
+            .expect(401)
+    });
+
+    it('Should return the status and blocks of the authenticated account.', async () => {
+        const { pk, sk, bc } = await makePendingCandidate()
+        const { ts, sig } = timestampAuth(pk, sk)
+
+        const res = await request(app)
+            .get('/api/v1/validations/mine')
+            .set('x-signature', sig)
+            .query({ publickey: pk, timestamp: ts })
+            .expect(200)
+
+        assert.deepEqual(res.body, { status: 'pending-validation', blocks: bc.export() })
     });
 });
 
