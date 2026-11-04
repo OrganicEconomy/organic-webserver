@@ -89,15 +89,11 @@ export async function postRegister(req: Request, res: Response): Promise<void> {
         return
     }
 
-    try {
-        const data = await User.create(user) as any
-        if (isBootstrap) {
-            await createEcosystem(data.publickey, process.env.ORGANIC_SERVER_NAME || 'Organic server')
-        }
-        res.send({ publickey: data.publickey, status: data.status, blocks: data.blocks, devicetoken: data.devicetoken })
-    } catch (err) {
-        sendError(res, 500, (err as Error).message || "Some error occurred while creating the User.");
+    const data = await User.create(user) as any
+    if (isBootstrap) {
+        await createEcosystem(data.publickey, process.env.ORGANIC_SERVER_NAME || 'Organic server')
     }
+    res.send({ publickey: data.publickey, status: data.status, blocks: data.blocks, devicetoken: data.devicetoken })
 }
 
 async function removeWaitingTransactions(lastblock: BlockWire, targetpk: string) {
@@ -157,16 +153,12 @@ export async function putSaveUser(req: Request, res: Response): Promise<void> {
         return
     }
 
-    try {
-        await User.update(
-            { blocks: blocks },
-            { where: { publickey: publickey } }
-        )
-        await removeWaitingTransactions(blocks[0], publickey)
-        res.send({ message: "User was updated successfully." });
-    } catch (err) {
-        sendError(res, 500, `Error updating User with pk=${publickey} : "${err}"`);
-    }
+    await User.update(
+        { blocks: blocks },
+        { where: { publickey: publickey } }
+    )
+    await removeWaitingTransactions(blocks[0], publickey)
+    res.send({ message: "User was updated successfully." });
 }
 
 const BLOCK_UPDATE_ERRORS: Record<BlockUpdateFailure, { status: number, message: string }> = {
@@ -217,23 +209,12 @@ export async function putSignAndSaveUser(req: Request, res: Response): Promise<v
         return
     }
 
-    let newBlocks
-    try {
-        newBlocks = await signLastBlock(update.blocks)
-    } catch (err) {
-        sendError(res, 500, `Error signing block for user pk=${publickey} : "${err}"`);
-        return
-    }
-
-    try {
-        await sequelize.transaction(async (transaction) => {
-            await registerCashedPapers(papersToCash.papers, publickey, transaction)
-            await User.update({ blocks: newBlocks }, { where: { publickey }, transaction })
-        })
-        res.send({ message: "User was updated successfully." });
-    } catch (err) {
-        sendError(res, 500, `Error updating User with pk=${publickey} : "${err}"`);
-    }
+    const newBlocks = await signLastBlock(update.blocks)
+    await sequelize.transaction(async (transaction) => {
+        await registerCashedPapers(papersToCash.papers, publickey, transaction)
+        await User.update({ blocks: newBlocks }, { where: { publickey }, transaction })
+    })
+    res.send({ message: "User was updated successfully." });
 }
 
 /**
