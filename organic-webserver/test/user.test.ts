@@ -47,6 +47,14 @@ function registerNewCitizen(name: string) {
         })
 }
 
+async function averageLoginDuration(mail: string, password: string, attempts = 3) {
+    const start = Date.now()
+    for (let i = 0; i < attempts; i++) {
+        await request(app).post('/api/users/login').send({ mail, password }).expect(404)
+    }
+    return (Date.now() - start) / attempts
+}
+
 async function registerPendingCitizen() {
     const bc = new CitizenBlockchain()
     const sk = bc.makeBirthBlock("Pending", new Date(), null)
@@ -96,6 +104,25 @@ describe('POST /users/login', () => {
             .set('Accept', 'application/json')
             .send({ mail, password })
             .expect(200);
+    });
+
+    it('Should find the account whatever the case and surrounding spaces of the given mail.', async () => {
+        await registerNewCitizen("Casual").expect(200)
+
+        await request(app)
+            .post('/api/users/login')
+            .send({ mail: " CASUAL@Mail.com ", password: "a" })
+            .expect(200);
+    });
+
+    it('Should take as long for an unknown mail as for a wrong password.', async () => {
+        await registerNewCitizen("Timed").expect(200)
+
+        const unknownMailDuration = await averageLoginDuration("nobody@mail.com", "a")
+        const wrongPasswordDuration = await averageLoginDuration("timed@mail.com", "wrong")
+
+        assert.ok(unknownMailDuration > wrongPasswordDuration / 2,
+            `unknown mail answered in ${unknownMailDuration}ms, wrong password in ${wrongPasswordDuration}ms`)
     });
 
     it('Should issue a devicetoken and revoke the previous one.', async () => {
@@ -243,8 +270,8 @@ describe('POST /users/register', () => {
 
         const bc = new CitizenBlockchain()
         const sk = "8201979f77794c943300a0070bb8320eccf57a68e10f0a667d8a5a075eb4dfcb"
-        const pk = "0206ffd8f4fe843f5f7183179dcf36f550326813f56ec824911abca9c9d1cd7834"
         bc.makeBirthBlock("Candidate", new Date(2012, 11, 28), sk)
+        const pk = bc.getMyPublicKey()
 
         const res = await request(app)
             .post('/api/users/register')
@@ -270,6 +297,42 @@ describe('POST /users/register', () => {
         // No second core ecosystem gets created for a non-bootstrap registration.
         const cores = await Ecosystem.count({ where: { iscore: true } })
         assert.equal(cores, 0)
+    });
+
+    it('Should refuse a publickey that is not the owner of the given blockchain.', async () => {
+        const bc = new CitizenBlockchain()
+        const sk = bc.makeBirthBlock("Impostor", new Date(2000, 0, 1), null)
+
+        await request(app)
+            .post('/api/users/register')
+            .send({
+                publickey: TEST_PK,
+                name: "Impostor",
+                mail: "impostor@mail.com",
+                password: "a",
+                secretkey: sk,
+                blocks: bc.export(),
+            })
+            .expect(400)
+        assert.equal(await User.count({ where: { publickey: TEST_PK } }), 0)
+    });
+
+    it('Should refuse a mail already used by another account, whatever its case and surrounding spaces.', async () => {
+        await registerNewCitizen("Taken").expect(200)
+
+        const bc = new CitizenBlockchain()
+        const sk = bc.makeBirthBlock("Copycat", new Date(2000, 0, 1), null)
+        await request(app)
+            .post('/api/users/register')
+            .send({
+                publickey: bc.getMyPublicKey(),
+                name: "Copycat",
+                mail: " TAKEN@mail.com ",
+                password: "a",
+                secretkey: sk,
+                blocks: bc.export(),
+            })
+            .expect(409)
     });
 
     it('Should reject a non-bootstrap registration whose blockchain is already validated.', async () => {

@@ -6,12 +6,13 @@ import bcrypt from 'bcryptjs'
 import type { BlockWire, MembershipStatus } from 'organic-protocol'
 import { publicFromPrivate } from 'organic-money/src/index.js'
 
-import { validateBlockchain, assertWaitingValidation, updateLastBlock, signLastBlock, type BlockUpdateFailure } from '../services/blockchain.service.js'
+import { validateBlockchain, assertWaitingValidation, assertIsOwnedBy, updateLastBlock, signLastBlock, type BlockUpdateFailure } from '../services/blockchain.service.js'
 import { createEcosystem } from '../services/ecosystem.service.js'
 import { findPapersToCash, holdsOnlyPapersCashedBy, registerCashedPapers, sendPaperCashingError } from '../services/paper-cashing.service.js'
 import { sendError } from '../utils/api-error.js'
 
 const SECRETKEY = process.env.ORGANIC_SECRET_KEY as string
+const UNKNOWN_MAIL_HASH = bcrypt.hashSync(randomUUID(), 10)
 
 export async function postLoginUser(req: Request, res: Response): Promise<void> {
     if (!req.body || !req.body.mail || !req.body.password) {
@@ -19,11 +20,11 @@ export async function postLoginUser(req: Request, res: Response): Promise<void> 
         return;
     }
 
-    const mail = req.body.mail;
+    const mail = normalizeMail(req.body.mail);
     const password = req.body.password;
 
     const user = await User.findOne({ where: { mail: mail } }) as any;
-    const isPasswordValid = user !== null && await bcrypt.compare(password, user.password);
+    const isPasswordValid = await bcrypt.compare(password, user?.password ?? UNKNOWN_MAIL_HASH) && user !== null;
 
     if (!isPasswordValid) {
         sendError(res, 404, "User not found or invalid password");
@@ -39,6 +40,10 @@ export async function postLoginUser(req: Request, res: Response): Promise<void> 
     res.send({ publickey, name, mail: userMail, secretkey, status, blocks, devicetoken })
 }
 
+function normalizeMail(mail: string): string {
+    return mail.trim().toLowerCase()
+}
+
 export async function postRegister(req: Request, res: Response): Promise<void> {
     if (!req.body || !req.body.publickey || !req.body.name || !req.body.mail
         || !req.body.password || !req.body.secretkey || !req.body.blocks) {
@@ -51,12 +56,18 @@ export async function postRegister(req: Request, res: Response): Promise<void> {
     // server's core ecosystem in the same breath (below), so there is never
     // a window where a validated citizen exists with no one able to
     // validate the next one.
+    const mail = normalizeMail(req.body.mail)
+    if (await User.findOne({ where: { mail } })) {
+        sendError(res, 409, "This mail is already used by another account.");
+        return
+    }
+
     const isBootstrap = (await User.count()) === 0
 
     const user: { publickey: string, name: string, mail: string, password: string, secretkey: string, birthdate: string | null, validatorpk: string | null, devicetoken: string, blocks: BlockWire[], status: MembershipStatus } = {
         publickey: req.body.publickey,
         name: req.body.name,
-        mail: req.body.mail,
+        mail,
         password: await bcrypt.hash(req.body.password, 10),
         secretkey: req.body.secretkey,
         birthdate: req.body.birthdate ?? null,
@@ -67,6 +78,7 @@ export async function postRegister(req: Request, res: Response): Promise<void> {
     };
 
     try {
+        assertIsOwnedBy(user.blocks, user.publickey)
         if (isBootstrap) {
             user.blocks = validateBlockchain(user.blocks)
         } else {
