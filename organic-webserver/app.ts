@@ -58,12 +58,8 @@ app.disable('x-powered-by')
 app.use(express.json());
 app.use(cors(corsOptions))
 
-try {
-    await sequelize.sync()
-    console.log("Synced db.");
-} catch (err) {
-    console.log("Failed to sync db: " + (err as Error).message);
-}
+await sequelize.sync()
+console.log("Synced db.");
 
 // The '/api' prefix also rate-limits '/api/v1/*'.
 app.use(['/api/v1/users/login', '/api/users/login'], loginLimiter)

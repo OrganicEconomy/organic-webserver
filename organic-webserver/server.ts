@@ -7,21 +7,23 @@
  * one; a plain http:// origin silently disables it).
  */
 import { readFileSync } from "node:fs";
+import { createServer as createHttpServer } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
 import app from "./app.js";
 
 const PORT = Number(process.env.NODE_DOCKER_PORT || process.env.NODE_LOCAL_PORT || 8080);
+const HOST = process.env.NODE_LISTEN_HOST;
 
 const sslCertPath = process.env.SSL_CERT_PATH;
 const sslKeyPath = process.env.SSL_KEY_PATH;
 
 if (sslCertPath && sslKeyPath) {
     const options = { cert: readFileSync(sslCertPath), key: readFileSync(sslKeyPath) };
-    createHttpsServer(options, app).listen(PORT, () => {
+    createHttpsServer(options, app).listen({ port: PORT, host: HOST }, () => {
         console.log(`Organic server listening on port ${PORT} (HTTPS)`);
     });
 } else {
-    app.listen(PORT, () => {
+    createHttpServer(app).listen({ port: PORT, host: HOST }, () => {
         console.log(`Organic server listening on port ${PORT}`);
     });
 }
