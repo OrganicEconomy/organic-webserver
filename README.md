@@ -9,7 +9,7 @@ The organic economy application stands on 3 things :
 
 ## Production
 
-Create a .env file at the root of the folder (see `.env.dev` for the variables).
+Create a .env file at the root of the folder (see `.env.dev.example` for the variables), with keys of its own: never the ones of a dev machine.
 
 The server speaks plain HTTP: TLS is terminated by a reverse proxy placed in
 front (Caddy). Deployment recipes — Caddy, Docker, Postgres — live in the
@@ -21,6 +21,13 @@ front (Caddy). Deployment recipes — Caddy, Docker, Postgres — live in the
 
 ```bash
 npm install
+```
+
+Then, at the root of the repository, create your dev environment and fill in two freshly generated keys:
+
+```bash
+cp .env.dev.example .env.dev
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
 
 ### Run server

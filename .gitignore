@@ -4,3 +4,4 @@ organic-webserver/data
 organic-webserver/dev.sqlite
 .env
 .env.local
+.env.dev
