@@ -29,7 +29,6 @@ const corsOptions = {
     origin: ['http://localhost:4200', 'https://localhost:4200', ...extraOrigins],
     methods: ['GET', 'POST', 'PUT'],
     allowedHeaders: ['Content-Type', 'Authorization', 'x-signature'],
-    credentials: true,
     optionsSuccessStatus: 200
 };
 
@@ -54,6 +53,7 @@ const loginLimiter = rateLimit({
 const app = express();
 
 app.set('trust proxy', 'loopback')
+app.disable('x-powered-by')
 
 app.use(express.json());
 app.use(cors(corsOptions))
