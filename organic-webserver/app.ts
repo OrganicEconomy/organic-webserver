@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
+import { REQUEST_AUTH_HEADERS } from 'organic-protocol';
 import { sequelize } from "./app/models.js";
 import papersRouter from "./app/routes/used-papers.routes.js";
 import usersRouter from "./app/routes/users.routes.js";
@@ -9,6 +10,7 @@ import infoRouter from "./app/routes/info.routes.js";
 import validationsRouter from "./app/routes/validations.routes.js";
 import ecosystemsRouter from "./app/routes/ecosystems.routes.js";
 import { errorHandler } from "./app/utils/error-handler.js";
+import { keepRawBody } from "./app/utils/raw-body.util.js";
 
 if (!process.env.ORGANIC_SECRET_KEY) {
     throw new Error('Missing ORGANIC_SECRET_KEY environment variable');
@@ -28,7 +30,7 @@ const extraOrigins = (process.env.CORS_EXTRA_ORIGINS ?? '')
 const corsOptions = {
     origin: ['http://localhost:4200', 'https://localhost:4200', ...extraOrigins],
     methods: ['GET', 'POST', 'PUT'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'x-signature'],
+    allowedHeaders: ['Content-Type', 'Authorization', ...Object.values(REQUEST_AUTH_HEADERS)],
     optionsSuccessStatus: 200
 };
 
@@ -55,7 +57,7 @@ const app = express();
 app.set('trust proxy', 'loopback')
 app.disable('x-powered-by')
 
-app.use(express.json());
+app.use(express.json({ verify: keepRawBody }));
 app.use(cors(corsOptions))
 
 await sequelize.sync()

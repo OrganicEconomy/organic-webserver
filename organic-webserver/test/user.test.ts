@@ -7,6 +7,7 @@ import { CitizenBlockchain, EcosystemBlockchain, BlockMaker, signHash, hashTimes
 import { dateToInt } from 'organic-money/src/crypto.js';
 import { encryptEcosystemKey } from '../app/utils/ecosystem-key.util.js';
 import type { BlockWire } from 'organic-protocol';
+import { signedRequest } from './helpers/request-auth.js';
 
 const TEST_SK = "ed945716dddb7af2c9774939e9946f1fee31f5ec0a3c6ec96059f119c396912f"
 const TEST_PK = "02c85e4e448d67a8dc724c620f3fe7d2a3a3cce9fe905b918f712396b4f8effcb3"
@@ -435,24 +436,18 @@ describe('POST /users/password', () => {
         return { sk, pk }
     }
 
-    it('Should return 401 without a valid timestamp signature.', async () => {
-        const { pk } = await registerUser()
+    it('Should return 401 without a request signature.', async () => {
+        await registerUser()
         await request(app)
             .post('/api/users/password')
-            .send({ publickey: pk, timestamp: Math.floor(Date.now() / 1000), newpassword: "new", secretkey: "reencrypted" })
+            .send({ newpassword: "new", secretkey: "reencrypted" })
             .expect(401)
     });
 
     it('Should update bcrypt and the re-encrypted secretkey, without reading either.', async () => {
         const { sk, pk } = await registerUser()
 
-        const ts = Math.floor(Date.now() / 1000)
-        const sig = signHash(hashTimestampAuth(pk, ts), sk)
-
-        await request(app)
-            .post('/api/users/password')
-            .set('x-signature', sig)
-            .send({ publickey: pk, timestamp: ts, newpassword: "newpassword", secretkey: "encrypted-with-new-password" })
+        await signedRequest('post', '/api/users/password', sk, { newpassword: "newpassword", secretkey: "encrypted-with-new-password" })
             .expect(200)
 
         const user = await User.findOne({ where: { publickey: pk } }) as any
@@ -464,33 +459,19 @@ describe('POST /users/password', () => {
         await User.destroy({ where: {}, truncate: true })
         const { sk, pk } = await registerUser()
 
-        const ts = Math.floor(Date.now() / 1000)
-        const sig = signHash(hashTimestampAuth(pk, ts), sk)
-
-        await request(app)
-            .post('/api/users/password')
-            .set('x-signature', sig)
-            .send({ publickey: pk, timestamp: ts, newpassword: "newpassword", secretkey: { encrypted: true } })
+        await signedRequest('post', '/api/users/password', sk, { newpassword: "newpassword", secretkey: { encrypted: true } })
             .expect(400)
 
         const user = await User.findOne({ where: { publickey: pk } }) as any
         assert.equal(user.secretkey, "encrypted-with-old-password")
     });
 
-    it("Should not let an attacker authenticated in the query change someone else's password.", async () => {
+    it("Should not let an attacker change someone else's password by naming their publickey.", async () => {
         await User.destroy({ where: {}, truncate: true })
         const victim = await registerUser()
         const attackerSk = "1111111111111111111111111111111111111111111111111111111111111111"
-        const attackerPk = publicFromPrivate(attackerSk)
 
-        const ts = Math.floor(Date.now() / 1000)
-        const sig = signHash(hashTimestampAuth(attackerPk, ts), attackerSk)
-
-        await request(app)
-            .post('/api/users/password')
-            .query({ publickey: attackerPk, timestamp: ts })
-            .set('x-signature', sig)
-            .send({ publickey: victim.pk, newpassword: "hacked", secretkey: "garbage" })
+        await signedRequest('post', '/api/users/password', attackerSk, { newpassword: "hacked", secretkey: "garbage" }, { publickey: victim.pk })
             .expect(401)
 
         const user = await User.findOne({ where: { publickey: victim.pk } }) as any
