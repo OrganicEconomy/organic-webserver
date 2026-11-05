@@ -140,11 +140,8 @@ export async function putSaveUser(req: Request, res: Response): Promise<void> {
         return
     }
 
-    // Devicetoken mismatch = a more recent login elsewhere revoked this device
-    // (PROTOCOL.md §5.4). A user with no devicetoken yet (never logged in
-    // since register, which always sets one) has nothing to compare against.
-    if (user.devicetoken && user.devicetoken !== req.body.devicetoken) {
-        sendError(res, 409, "This device has been revoked by a more recent login.", 'DEVICE_REVOKED');
+    if (isRevokedDevice(user, req.body.devicetoken)) {
+        sendDeviceRevokedError(res)
         return
     }
 
@@ -166,6 +163,14 @@ export async function putSaveUser(req: Request, res: Response): Promise<void> {
     )
     await removeWaitingTransactions(blocks[0], publickey)
     res.send({ message: "User was updated successfully." });
+}
+
+function isRevokedDevice(user: { devicetoken: string | null }, devicetoken: unknown): boolean {
+    return Boolean(user.devicetoken) && user.devicetoken !== devicetoken
+}
+
+function sendDeviceRevokedError(res: Response): void {
+    sendError(res, 409, "This device has been revoked by a more recent login.", 'DEVICE_REVOKED')
 }
 
 const BLOCK_UPDATE_ERRORS: Record<BlockUpdateFailure, { status: number, message: string }> = {
@@ -191,6 +196,11 @@ export async function putSignAndSaveUser(req: Request, res: Response): Promise<v
 
     if (!user) {
         res.status(404).send()
+        return
+    }
+
+    if (isRevokedDevice(user, req.body.devicetoken)) {
+        sendDeviceRevokedError(res)
         return
     }
 

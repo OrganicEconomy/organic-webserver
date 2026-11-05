@@ -189,7 +189,7 @@ async function saveBlock(citizen) {
 }
 
 async function signBlock(citizen) {
-  const body = { block: citizen.chain.lastblock.export() }
+  const body = { block: citizen.chain.lastblock.export(), devicetoken: citizen.devicetoken }
   const { status, json } = await request('PUT', '/users/sign', { body, signedBy: citizen.sk })
   assert(status === 200, `sign(${citizen.name}) expected 200, got ${status}: ${JSON.stringify(json)}`)
 }

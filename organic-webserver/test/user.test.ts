@@ -757,7 +757,7 @@ describe('PUT /users/sign', () => {
     it('Should return 404 for unknown user', async () => {
         const block = BlockMaker.make({ v: 1, d: 20260101, p: "abc", s: TEST_PK, r: "", m: "", i: "", t: 0, h: "", x: [] })
         block.merkle()
-        await signedRequest('put', '/api/users/sign', TEST_SK, { block: block.export() })
+        await signedRequest('put', '/api/users/sign', TEST_SK, { block: block.export(), devicetoken: "irrelevant" })
             .expect(404)
     });
 
@@ -766,7 +766,7 @@ describe('PUT /users/sign', () => {
         bc.validateAccount(sk)
         const selfSignedInitBlock = bc.lastblock.export()
 
-        await signedRequest('put', '/api/users/sign', sk, { block: selfSignedInitBlock })
+        await signedRequest('put', '/api/users/sign', sk, { block: selfSignedInitBlock, devicetoken: "current-device" })
             .expect(403)
 
         const user = await User.findOne({ where: { publickey: pk } }) as any
@@ -806,7 +806,7 @@ describe('PUT /users/sign', () => {
         await User.update({ status: 'rejected' }, { where: { publickey: pk } })
 
         const blockToSign = bc.lastblock.export()
-        await signedRequest('put', '/api/users/sign', sk, { block: blockToSign })
+        await signedRequest('put', '/api/users/sign', sk, { block: blockToSign, devicetoken: "current-device" })
             .expect(403)
 
         const user = await User.findOne({ where: { publickey: pk } }) as any
