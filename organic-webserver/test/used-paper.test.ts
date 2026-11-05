@@ -2,9 +2,10 @@ import request from 'supertest';
 import app from "../app.js";
 import assert from "assert";
 import { UsedPaper, Ecosystem, User } from "../app/models.js";
-import { CitizenBlockchain, EcosystemBlockchain, BlockMaker, TransactionMaker, signHash, publicFromPrivate } from 'organic-money/src/index.js';
+import { CitizenBlockchain, EcosystemBlockchain, TransactionMaker, publicFromPrivate } from 'organic-money/src/index.js';
 import { randomPrivateKey } from 'organic-money/src/crypto.js';
 import { encryptEcosystemKey } from '../app/utils/ecosystem-key.util.js';
+import { signedRequest } from './helpers/request-auth.js';
 
 const SECRETKEY = process.env.ORGANIC_SECRET_KEY as string
 
@@ -68,16 +69,7 @@ function makeForgedPaper(targetPk: string) {
 function cashThroughSign(casher: { bc: InstanceType<typeof CitizenBlockchain>, sk: string, pk: string }, paper: any) {
     casher.bc.cashPaper(TransactionMaker.make(paper.export()))
     const block = casher.bc.lastblock.export()
-    return request(app)
-        .put('/api/users/sign')
-        .set('x-signature', signBlock(block, casher.sk))
-        .send({ publickey: casher.pk, block })
-}
-
-function signBlock(blockObj: object, sk: string) {
-    const block = BlockMaker.make(blockObj)
-    block.merkle()
-    return signHash(block.hash(), sk)
+    return signedRequest('put', '/api/users/sign', casher.sk, { block })
 }
 
 // A real DER-encoded SECP256K1 signature (hex) — length varies with r/s
@@ -268,10 +260,7 @@ describe('PUT /users/sign (cashing papers)', () => {
         casher.bc.receivePay(payer.pay(payerSk, casher.pk, 1))
         const longerBlock = casher.bc.lastblock.export()
 
-        await request(app)
-            .put('/api/users/save')
-            .set('x-signature', signBlock(longerBlock, casher.sk))
-            .send({ publickey: casher.pk, block: longerBlock, devicetoken: "casher-device" })
+        await signedRequest('put', '/api/users/save', casher.sk, { block: longerBlock, devicetoken: "casher-device" })
             .expect(200)
 
         const user = await User.findOne({ where: { publickey: casher.pk } }) as any
@@ -284,10 +273,7 @@ describe('PUT /users/sign (cashing papers)', () => {
         casher.bc.cashPaper(TransactionMaker.make(makeForgedPaper(ecoPk).export()))
         const block = casher.bc.lastblock.export()
 
-        await request(app)
-            .put('/api/users/save')
-            .set('x-signature', signBlock(block, casher.sk))
-            .send({ publickey: casher.pk, block, devicetoken: "casher-device" })
+        await signedRequest('put', '/api/users/save', casher.sk, { block, devicetoken: "casher-device" })
             .expect(400)
 
         const user = await User.findOne({ where: { publickey: casher.pk } }) as any

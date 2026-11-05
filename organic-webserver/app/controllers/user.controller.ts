@@ -125,12 +125,12 @@ async function removeWaitingTransactions(lastblock: BlockWire, targetpk: string)
  * (because they are no more waiting)
  */
 export async function putSaveUser(req: Request, res: Response): Promise<void> {
-    if (!req.body || !req.body.publickey || !req.body.block) {
-        sendError(res, 400, "Fields 'publickey' and 'block' are needed.");
+    if (!req.body?.block) {
+        sendError(res, 400, "Field 'block' is needed.");
         return;
     }
 
-    const publickey = req.body.publickey;
+    const publickey = res.locals.authenticatedPk as string;
     const lastblock = req.body.block;
 
     const user = await User.findOne({ where: { publickey: publickey } }) as any;
@@ -179,12 +179,12 @@ function sendBlockUpdateError(res: Response, failure: BlockUpdateFailure): void 
 }
 
 export async function putSignAndSaveUser(req: Request, res: Response): Promise<void> {
-    if (!req.body || !req.body.publickey || !req.body.block) {
-        sendError(res, 400, "Fields 'publickey' and 'block' are needed.");
+    if (!req.body?.block) {
+        sendError(res, 400, "Field 'block' is needed.");
         return;
     }
 
-    const publickey = req.body.publickey;
+    const publickey = res.locals.authenticatedPk as string;
     const lastblock = req.body.block;
 
     const user = await User.findOne({ where: { publickey: publickey } }) as any;

@@ -1,61 +1,40 @@
 import type { Request, Response, NextFunction } from 'express'
-import { BlockMaker, verifySignature, hashTimestampAuth } from 'organic-money/src/index.js'
+import { verifySignature, publicFromPrivate } from 'organic-money/src/index.js'
+import { hashRequestAuth, REQUEST_AUTH_HEADERS, REQUEST_AUTH_TOLERANCE_SECONDS } from 'organic-protocol'
 import { sendError } from '../utils/api-error.js'
+import { rawBodyOf } from '../utils/raw-body.util.js'
+import { isFirstUse } from '../utils/replay-guard.util.js'
 
-const TIMESTAMP_TOLERANCE_SECONDS = 300
+const SERVER_PK = publicFromPrivate(process.env.ORGANIC_SECRET_KEY as string)
 
-export function requireBlockAuth(req: Request, res: Response, next: NextFunction): void {
-    const signature = req.headers['x-signature']
-    const publickey = req.body?.publickey
+export function requireRequestAuth(req: Request, res: Response, next: NextFunction): void {
+    const publickey = req.get(REQUEST_AUTH_HEADERS.publickey)
+    const timestamp = Number(req.get(REQUEST_AUTH_HEADERS.timestamp))
+    const nonce = req.get(REQUEST_AUTH_HEADERS.nonce)
+    const signature = req.get(REQUEST_AUTH_HEADERS.signature)
 
-    if (!signature || !publickey || !req.body?.block) {
+    if (!publickey || !nonce || !signature || !Number.isInteger(timestamp)) {
         sendError(res, 401, "Authentication required")
         return
     }
 
-    try {
-        const block = BlockMaker.make(req.body.block)
-        block.merkle()
-        if (!verifySignature(block.hash(), signature, publickey)) {
-            sendError(res, 401, "Invalid signature", 'INVALID_SIGNATURE')
-            return
-        }
-    } catch {
-        sendError(res, 401, "Invalid signature", 'INVALID_SIGNATURE')
-        return
-    }
-
-    res.locals.authenticatedPk = publickey
-    next()
-}
-
-/**
- * publickey/timestamp travel as query params for GET routes (tx/list) and as
- * body fields for POST routes (users/password) — PROTOCOL.md §5.1 allows both.
- */
-export function requireTimestampAuth(req: Request, res: Response, next: NextFunction): void {
-    const signature = req.headers['x-signature']
-    const publickey = req.query.publickey ?? req.body?.publickey
-    const timestamp = req.query.timestamp ?? req.body?.timestamp
-
-    if (!signature || !publickey || !timestamp) {
-        sendError(res, 401, "Authentication required")
-        return
-    }
-
-    if (isClaimingTwoIdentities(req)) {
-        sendError(res, 401, "Query and body publickeys differ")
-        return
-    }
-
-    const ts = parseInt(timestamp as string)
-    if (isNaN(ts) || Math.abs(Date.now() / 1000 - ts) > TIMESTAMP_TOLERANCE_SECONDS) {
+    if (!isWithinTolerance(timestamp)) {
         sendError(res, 401, "Expired or invalid timestamp")
         return
     }
 
-    if (!verifySignature(hashTimestampAuth(publickey as string, timestamp as string), signature as string, publickey as string)) {
+    const requestHash = hashRequestAuth({
+        method: req.method, path: req.originalUrl, timestamp, nonce,
+        body: rawBodyOf(req), serverPk: SERVER_PK, publickey,
+    })
+
+    if (!isValidSignature(requestHash, signature, publickey)) {
         sendError(res, 401, "Invalid signature", 'INVALID_SIGNATURE')
+        return
+    }
+
+    if (!isFirstUse(Buffer.from(requestHash).toString('hex'))) {
+        sendError(res, 401, "This signed request was already used", 'REPLAYED_REQUEST')
         return
     }
 
@@ -63,8 +42,14 @@ export function requireTimestampAuth(req: Request, res: Response, next: NextFunc
     next()
 }
 
-function isClaimingTwoIdentities(req: Request): boolean {
-    const queryPk = req.query.publickey
-    const bodyPk = req.body?.publickey
-    return queryPk !== undefined && bodyPk !== undefined && queryPk !== bodyPk
+function isWithinTolerance(timestamp: number): boolean {
+    return Math.abs(Date.now() / 1000 - timestamp) <= REQUEST_AUTH_TOLERANCE_SECONDS
+}
+
+function isValidSignature(requestHash: Uint8Array, signature: string, publickey: string): boolean {
+    try {
+        return verifySignature(requestHash, signature, publickey)
+    } catch {
+        return false
+    }
 }

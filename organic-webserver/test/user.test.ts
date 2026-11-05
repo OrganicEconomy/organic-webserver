@@ -3,19 +3,14 @@ import app from "../app.js";
 import assert from "assert";
 import bcrypt from 'bcryptjs';
 import { User, Ecosystem, WaitingTx } from "../app/models.js";
-import { CitizenBlockchain, EcosystemBlockchain, BlockMaker, signHash, hashTimestampAuth, publicFromPrivate } from 'organic-money/src/index.js';
+import { CitizenBlockchain, EcosystemBlockchain, BlockMaker } from 'organic-money/src/index.js';
 import { dateToInt } from 'organic-money/src/crypto.js';
 import { encryptEcosystemKey } from '../app/utils/ecosystem-key.util.js';
-import type { BlockWire } from 'organic-protocol';
+import { REQUEST_AUTH_HEADERS, type BlockWire } from 'organic-protocol';
+import { signedRequest } from './helpers/request-auth.js';
 
 const TEST_SK = "ed945716dddb7af2c9774939e9946f1fee31f5ec0a3c6ec96059f119c396912f"
 const TEST_PK = "02c85e4e448d67a8dc724c620f3fe7d2a3a3cce9fe905b918f712396b4f8effcb3"
-
-function signBlock(blockObj: object, sk: string) {
-    const block = BlockMaker.make(blockObj)
-    block.merkle()
-    return signHash(block.hash(), sk)
-}
 
 const SECRETKEY = process.env.ORGANIC_SECRET_KEY as string
 
@@ -435,24 +430,18 @@ describe('POST /users/password', () => {
         return { sk, pk }
     }
 
-    it('Should return 401 without a valid timestamp signature.', async () => {
-        const { pk } = await registerUser()
+    it('Should return 401 without a request signature.', async () => {
+        await registerUser()
         await request(app)
             .post('/api/users/password')
-            .send({ publickey: pk, timestamp: Math.floor(Date.now() / 1000), newpassword: "new", secretkey: "reencrypted" })
+            .send({ newpassword: "new", secretkey: "reencrypted" })
             .expect(401)
     });
 
     it('Should update bcrypt and the re-encrypted secretkey, without reading either.', async () => {
         const { sk, pk } = await registerUser()
 
-        const ts = Math.floor(Date.now() / 1000)
-        const sig = signHash(hashTimestampAuth(pk, ts), sk)
-
-        await request(app)
-            .post('/api/users/password')
-            .set('x-signature', sig)
-            .send({ publickey: pk, timestamp: ts, newpassword: "newpassword", secretkey: "encrypted-with-new-password" })
+        await signedRequest('post', '/api/users/password', sk, { newpassword: "newpassword", secretkey: "encrypted-with-new-password" })
             .expect(200)
 
         const user = await User.findOne({ where: { publickey: pk } }) as any
@@ -464,33 +453,19 @@ describe('POST /users/password', () => {
         await User.destroy({ where: {}, truncate: true })
         const { sk, pk } = await registerUser()
 
-        const ts = Math.floor(Date.now() / 1000)
-        const sig = signHash(hashTimestampAuth(pk, ts), sk)
-
-        await request(app)
-            .post('/api/users/password')
-            .set('x-signature', sig)
-            .send({ publickey: pk, timestamp: ts, newpassword: "newpassword", secretkey: { encrypted: true } })
+        await signedRequest('post', '/api/users/password', sk, { newpassword: "newpassword", secretkey: { encrypted: true } })
             .expect(400)
 
         const user = await User.findOne({ where: { publickey: pk } }) as any
         assert.equal(user.secretkey, "encrypted-with-old-password")
     });
 
-    it("Should not let an attacker authenticated in the query change someone else's password.", async () => {
+    it("Should not let an attacker change someone else's password by naming their publickey.", async () => {
         await User.destroy({ where: {}, truncate: true })
         const victim = await registerUser()
         const attackerSk = "1111111111111111111111111111111111111111111111111111111111111111"
-        const attackerPk = publicFromPrivate(attackerSk)
 
-        const ts = Math.floor(Date.now() / 1000)
-        const sig = signHash(hashTimestampAuth(attackerPk, ts), attackerSk)
-
-        await request(app)
-            .post('/api/users/password')
-            .query({ publickey: attackerPk, timestamp: ts })
-            .set('x-signature', sig)
-            .send({ publickey: victim.pk, newpassword: "hacked", secretkey: "garbage" })
+        await signedRequest('post', '/api/users/password', attackerSk, { newpassword: "hacked", secretkey: "garbage" }, { publickey: victim.pk })
             .expect(401)
 
         const user = await User.findOne({ where: { publickey: victim.pk } }) as any
@@ -509,12 +484,7 @@ describe('PUT /users/save', () => {
     it('Should return 404 for unknown user', async () => {
         const block = BlockMaker.make({ v: 1, d: 20260101, p: "abc", s: TEST_PK, r: "", m: "", i: "", t: 0, h: "", x: [] })
         block.merkle()
-        const sig = signHash(block.hash(), TEST_SK)
-        await request(app)
-            .put('/api/users/save')
-            .set('Accept', 'application/json')
-            .set('x-signature', sig)
-            .send({ publickey: TEST_PK, block: block.export(), devicetoken: "irrelevant" })
+        await signedRequest('put', '/api/users/save', TEST_SK, { block: block.export(), devicetoken: "irrelevant" })
             .expect(404)
     });
 
@@ -544,11 +514,7 @@ describe('PUT /users/save', () => {
         bc.newBlock()
         const expected = bc.lastblock.export()
 
-        await request(app)
-            .put('/api/users/save')
-            .set('Accept', 'application/json')
-            .set('x-signature', signBlock(expected, sk))
-            .send({ publickey: pk, block: expected, devicetoken: "current-device" })
+        await signedRequest('put', '/api/users/save', sk, { block: expected, devicetoken: "current-device" })
             .expect(200)
 
         const user = await User.findOne({ where: { publickey: pk } }) as any
@@ -581,11 +547,7 @@ describe('PUT /users/save', () => {
         bc.newBlock()
 
         const toSend = bc.lastblock.export()
-        await request(app)
-            .put('/api/users/save')
-            .set('Accept', 'application/json')
-            .set('x-signature', signBlock(toSend, sk))
-            .send({ publickey: pk, block: toSend, devicetoken: "current-device" })
+        await signedRequest('put', '/api/users/save', sk, { block: toSend, devicetoken: "current-device" })
             .expect(409)
 
         const user = await User.findOne({ where: { publickey: pk } }) as any
@@ -609,11 +571,7 @@ describe('PUT /users/save', () => {
 
         const expected = { v: 0, d: "20121212", p: "aaa", s: 'bbb', r: "root", m: "", i: "", t: 2000, h: "toto", x: [] }
 
-        const res = await request(app)
-            .put('/api/users/save')
-            .set('Accept', 'application/json')
-            .set('x-signature', signBlock(expected, sk))
-            .send({ publickey: pk, block: expected, devicetoken: "a-stale-device" })
+        const res = await signedRequest('put', '/api/users/save', sk, { block: expected, devicetoken: "a-stale-device" })
             .expect(409)
 
         assert.equal(res.body.code, 'DEVICE_REVOKED')
@@ -651,10 +609,7 @@ describe('PUT /users/save', () => {
         bc.receivePay(transaction)
 
         const lastblock = bc.lastblock.export()
-        await request(app)
-            .put('/api/users/save')
-            .set('x-signature', signBlock(lastblock, sk))
-            .send({ publickey: pk, block: lastblock, devicetoken: "current-device" })
+        await signedRequest('put', '/api/users/save', sk, { block: lastblock, devicetoken: "current-device" })
             .expect(200)
 
         const waiting = await WaitingTx.findOne({ where: { hash: txExported.h } })
@@ -666,10 +621,7 @@ describe('PUT /users/save', () => {
         bc.validateAccount(sk)
         const selfSignedInitBlock = bc.lastblock.export()
 
-        await request(app)
-            .put('/api/users/save')
-            .set('x-signature', signBlock(selfSignedInitBlock, sk))
-            .send({ publickey: pk, block: selfSignedInitBlock, devicetoken: "current-device" })
+        await signedRequest('put', '/api/users/save', sk, { block: selfSignedInitBlock, devicetoken: "current-device" })
             .expect(400)
 
         const user = await User.findOne({ where: { publickey: pk } }) as any
@@ -686,10 +638,7 @@ describe('PUT /users/save', () => {
         const savedBlock: BlockWire = bc.lastblock.export()
         const rolledBackBlock = { ...savedBlock, x: savedBlock.x.filter(tx => tx.h !== payment.signature) }
 
-        await request(app)
-            .put('/api/users/save')
-            .set('x-signature', signBlock(rolledBackBlock, sk))
-            .send({ publickey: pk, block: rolledBackBlock, devicetoken: "current-device" })
+        await signedRequest('put', '/api/users/save', sk, { block: rolledBackBlock, devicetoken: "current-device" })
             .expect(400)
 
         const user = await User.findOne({ where: { publickey: pk } }) as any
@@ -705,10 +654,7 @@ describe('PUT /users/save', () => {
 
         const orphanBlock: BlockWire = { ...bc.lastblock.export(), p: null }
 
-        await request(app)
-            .put('/api/users/save')
-            .set('x-signature', signBlock(orphanBlock, sk))
-            .send({ publickey: pk, block: orphanBlock, devicetoken: "current-device" })
+        await signedRequest('put', '/api/users/save', sk, { block: orphanBlock, devicetoken: "current-device" })
             .expect(409)
     });
 
@@ -722,10 +668,7 @@ describe('PUT /users/save', () => {
         const block: BlockWire = bc.lastblock.export()
         const forgedBlock = { ...block, x: block.x.map(tx => tx.h === payment.signature ? { ...tx, p: pk } : tx) }
 
-        await request(app)
-            .put('/api/users/save')
-            .set('x-signature', signBlock(forgedBlock, sk))
-            .send({ publickey: pk, block: forgedBlock, devicetoken: "current-device" })
+        await signedRequest('put', '/api/users/save', sk, { block: forgedBlock, devicetoken: "current-device" })
             .expect(400)
 
         const user = await User.findOne({ where: { publickey: pk } }) as any
@@ -743,10 +686,7 @@ describe('PUT /users/save', () => {
         const newerVersion: BlockWire = bc.lastblock.export()
 
         await Promise.all([newerVersion, olderVersion].map(block =>
-            request(app)
-                .put('/api/users/save')
-                .set('x-signature', signBlock(block, sk))
-                .send({ publickey: pk, block, devicetoken: "current-device" })
+            signedRequest('put', '/api/users/save', sk, { block, devicetoken: "current-device" })
         ))
 
         const user = await User.findOne({ where: { publickey: pk } }) as any
@@ -764,10 +704,7 @@ describe('PUT /users/save', () => {
 
         const forgedBlock: BlockWire = bc.lastblock.export()
 
-        await request(app)
-            .put('/api/users/save')
-            .set('x-signature', signBlock(forgedBlock, sk))
-            .send({ publickey: pk, block: forgedBlock, devicetoken: "current-device" })
+        await signedRequest('put', '/api/users/save', sk, { block: forgedBlock, devicetoken: "current-device" })
             .expect(400)
 
         const user = await User.findOne({ where: { publickey: pk } }) as any
@@ -799,11 +736,7 @@ describe('PUT /users/save', () => {
         assert.equal(bc.blocks.length, 3)
 
         const lastblock = bc.lastblock.export()
-        await request(app)
-            .put('/api/users/save')
-            .set('Accept', 'application/json')
-            .set('x-signature', signBlock(lastblock, sk))
-            .send({ publickey: pk, block: lastblock, devicetoken: "current-device" })
+        await signedRequest('put', '/api/users/save', sk, { block: lastblock, devicetoken: "current-device" })
             .expect(200)
 
         const user = await User.findOne({ where: { publickey: pk } }) as any
@@ -824,12 +757,7 @@ describe('PUT /users/sign', () => {
     it('Should return 404 for unknown user', async () => {
         const block = BlockMaker.make({ v: 1, d: 20260101, p: "abc", s: TEST_PK, r: "", m: "", i: "", t: 0, h: "", x: [] })
         block.merkle()
-        const sig = signHash(block.hash(), TEST_SK)
-        await request(app)
-            .put('/api/users/sign')
-            .set('Accept', 'application/json')
-            .set('x-signature', sig)
-            .send({ publickey: TEST_PK, block: block.export() })
+        await signedRequest('put', '/api/users/sign', TEST_SK, { block: block.export() })
             .expect(404)
     });
 
@@ -838,17 +766,14 @@ describe('PUT /users/sign', () => {
         bc.validateAccount(sk)
         const selfSignedInitBlock = bc.lastblock.export()
 
-        await request(app)
-            .put('/api/users/sign')
-            .set('x-signature', signBlock(selfSignedInitBlock, sk))
-            .send({ publickey: pk, block: selfSignedInitBlock })
+        await signedRequest('put', '/api/users/sign', sk, { block: selfSignedInitBlock })
             .expect(403)
 
         const user = await User.findOne({ where: { publickey: pk } }) as any
         assert.equal(user.blocks.length, 1)
     });
 
-    it("Should leave a victim's chain untouched when its public closed block is replayed without any newly cashed paper.", async () => {
+    it("Should not let anyone authenticate with the public signature of a victim's closed block.", async () => {
         const victim = new CitizenBlockchain()
         const victimSk = victim.startBlockchain("Victim", new Date(), SECRETKEY)
         const victimPk = victim.getMyPublicKey()
@@ -861,9 +786,12 @@ describe('PUT /users/sign', () => {
 
         await request(app)
             .put('/api/users/sign')
-            .set('x-signature', publicBlock.h as string)
-            .send({ publickey: victimPk, block: replayedBlock })
-            .expect(200)
+            .set(REQUEST_AUTH_HEADERS.publickey, victimPk)
+            .set(REQUEST_AUTH_HEADERS.timestamp, String(Math.floor(Date.now() / 1000)))
+            .set(REQUEST_AUTH_HEADERS.nonce, '00112233445566778899aabbccddeeff')
+            .set(REQUEST_AUTH_HEADERS.signature, publicBlock.h as string)
+            .send({ block: replayedBlock })
+            .expect(401)
 
         const user = await User.findOne({ where: { publickey: victimPk } }) as any
         assert.deepEqual(user.blocks[0], publicBlock)
@@ -878,10 +806,7 @@ describe('PUT /users/sign', () => {
         await User.update({ status: 'rejected' }, { where: { publickey: pk } })
 
         const blockToSign = bc.lastblock.export()
-        await request(app)
-            .put('/api/users/sign')
-            .set('x-signature', signBlock(blockToSign, sk))
-            .send({ publickey: pk, block: blockToSign })
+        await signedRequest('put', '/api/users/sign', sk, { block: blockToSign })
             .expect(403)
 
         const user = await User.findOne({ where: { publickey: pk } }) as any

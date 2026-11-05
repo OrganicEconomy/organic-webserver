@@ -1,8 +1,9 @@
 import request from 'supertest';
 import app from "../app.js";
+import { signedRequest } from './helpers/request-auth.js';
 import assert from "assert";
 import { WaitingTx, User } from "../app/models.js";
-import { CitizenBlockchain, BlockMaker, TransactionMaker, signHash, hashTimestampAuth } from 'organic-money/src/index.js';
+import { CitizenBlockchain, TransactionMaker } from 'organic-money/src/index.js';
 
 const SECRETKEY = process.env.ORGANIC_SECRET_KEY as string
 
@@ -55,12 +56,6 @@ async function registerReceiver(receiver: InstanceType<typeof CitizenBlockchain>
         mail: `${pk}@test.test`, password: "test", publickey: pk, name: "Receiver",
         secretkey: receiverSk, blocks: receiver.export(), devicetoken: "receiver-device"
     })
-}
-
-function signBlock(blockObj: object, sk: string) {
-    const block = BlockMaker.make(blockObj)
-    block.merkle()
-    return signHash(block.hash(), sk)
 }
 
 async function makeReceiver() {
@@ -173,10 +168,7 @@ describe('POST /tx/send', () => {
 
         receiver.receivePay(TransactionMaker.make(payment.export()))
         const lastblock = receiver.export()[0]
-        await request(app)
-            .put('/api/users/save')
-            .set('x-signature', signBlock(lastblock, receiverSk))
-            .send({ publickey: receiver.getMyPublicKey(), block: lastblock, devicetoken: "receiver-device" })
+        await signedRequest('put', '/api/users/save', receiverSk, { block: lastblock, devicetoken: "receiver-device" })
             .expect(200)
 
         await request(app)
@@ -293,13 +285,7 @@ describe('GET /tx/list', () => {
             .send({ tx: txExported })
             .expect(200)
 
-        const ts = Math.floor(Date.now() / 1000)
-        const sig = signHash(hashTimestampAuth(pk2, ts), receiverSk)
-
-        const res = await request(app)
-            .get('/api/tx/list')
-            .set('x-signature', sig)
-            .query({ publickey: pk2, timestamp: ts })
+        const res = await signedRequest('get', '/api/tx/list', receiverSk)
             .expect(200)
 
         assert.equal(res.body.length, 1)

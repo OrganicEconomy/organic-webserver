@@ -1,7 +1,8 @@
 import assert from "assert";
 import request from 'supertest';
 import app from "../app.js";
-import { CitizenBlockchain, BlockMaker, publicFromPrivate, signHash } from 'organic-money/src/index.js';
+import { signedRequest } from './helpers/request-auth.js';
+import { CitizenBlockchain, publicFromPrivate } from 'organic-money/src/index.js';
 import { aesDecrypt } from 'organic-money/src/crypto.js';
 import { User } from "../app/models.js";
 import { loadValidChain } from "../app/services/blockchain.service.js";
@@ -31,12 +32,6 @@ async function decryptSecretKey(blob: string, password: string): Promise<string>
         verifier: hexToBytes(parsed.verifier),
     }, password)
     return Buffer.from(decrypted).toString('hex')
-}
-
-function signBlock(blockObj: object, sk: string) {
-    const block = BlockMaker.make(blockObj)
-    block.merkle()
-    return signHash(block.hash(), sk)
 }
 
 describe('seedCitizen', function () {
@@ -91,10 +86,7 @@ describe('seedCitizen', function () {
         chain.pay(secretKey, publicFromPrivate(process.env.ORGANIC_SECRET_KEY as string), 1)
         const block = chain.lastblock.export()
 
-        await request(app)
-            .put('/api/users/save')
-            .set('x-signature', signBlock(block, secretKey))
-            .send({ publickey: login.body.publickey, block, devicetoken: login.body.devicetoken })
+        await signedRequest('put', '/api/users/save', secretKey, { block, devicetoken: login.body.devicetoken })
             .expect(200)
     });
 });
