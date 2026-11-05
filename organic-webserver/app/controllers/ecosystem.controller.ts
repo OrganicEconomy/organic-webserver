@@ -9,7 +9,7 @@ export async function postCreateEcosystem(req: Request, res: Response): Promise<
     const founderPk = res.locals.authenticatedPk as string
     const name = req.body?.name
     if (!founderPk || !name) {
-        sendError(res, 400, "Fields 'founderPk' and 'name' are needed.")
+        sendError(res, 400, "Field 'name' is needed.")
         return
     }
 

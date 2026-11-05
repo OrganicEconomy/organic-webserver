@@ -40,7 +40,7 @@ const User = sequelize.define("user", {
     /**
      * Opaque token identifying the currently active device (crypto.randomUUID()).
      * Issued at register/login; rotated on every login, revoking the previous one.
-     * Not cryptographic — identity is still proven by x-signature (PROTOCOL.md §5.4).
+     * Not cryptographic — identity is still proven by the request signature (PROTOCOL.md §5.1).
      */
     devicetoken: {
         type: Sequelize.STRING,

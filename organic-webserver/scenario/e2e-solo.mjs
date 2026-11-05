@@ -17,7 +17,9 @@
  * Defaults to E2E_BASE_URL=http://localhost:6868 (the port in .env.dev) —
  * point it at a docker-compose instance with E2E_BASE_URL=http://localhost:8080.
  */
-import { CitizenBlockchain, EcosystemBlockchain, TransactionMaker, signHash, hashTimestampAuth } from 'organic-money/src/index.js'
+import { randomBytes } from 'node:crypto'
+import { CitizenBlockchain, EcosystemBlockchain, TransactionMaker, signHash, publicFromPrivate } from 'organic-money/src/index.js'
+import { hashRequestAuth, REQUEST_AUTH_HEADERS } from 'organic-protocol'
 import { aesEncrypt } from 'organic-money/src/crypto.js'
 
 const BASE = process.env.E2E_BASE_URL || 'http://localhost:6868'
@@ -31,26 +33,28 @@ const API = `${BASE}/api/v1`
 // to weaken a security control just to run a health-check script, back off
 // using the RateLimit-Reset header (seconds until the window clears) and
 // retry — exactly what a well-behaved real client should do.
-async function request(method, path, { body, headers = {}, query } = {}, attempt = 0) {
+async function request(method, path, { body, query, signedBy } = {}, attempt = 0) {
   const url = new URL(`${API}${path}`)
   if (query) {
     for (const [key, value] of Object.entries(query)) url.searchParams.set(key, String(value))
   }
+  const json = body !== undefined ? JSON.stringify(body) : ''
+  const authHeaders = signedBy ? requestAuthHeaders(method, url, json, signedBy) : {}
   const res = await fetch(url, {
     method,
-    headers: { 'Content-Type': 'application/json', ...headers },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    headers: { 'Content-Type': 'application/json', ...authHeaders },
+    body: body !== undefined ? json : undefined,
   })
   if (res.status === 429 && attempt < 3) {
     const resetSeconds = Number(res.headers.get('RateLimit-Reset') || res.headers.get('Retry-After') || 5)
     const waitSeconds = resetSeconds + 1
     console.log(`  … rate-limited (429), waiting ${waitSeconds}s before retrying ${method} ${path}`)
     await new Promise((resolve) => setTimeout(resolve, waitSeconds * 1000))
-    return request(method, path, { body, headers, query }, attempt + 1)
+    return request(method, path, { body, query, signedBy }, attempt + 1)
   }
-  let json = null
-  try { json = await res.json() } catch { /* empty body, e.g. bare 404/401 */ }
-  return { status: res.status, json }
+  let answer = null
+  try { answer = await res.json() } catch { /* empty body, e.g. bare 404/401 */ }
+  return { status: res.status, json: answer }
 }
 
 async function waitForServer(timeoutMs = 60000) {
@@ -58,30 +62,34 @@ async function waitForServer(timeoutMs = 60000) {
   while (Date.now() - start < timeoutMs) {
     try {
       const { status, json } = await request('GET', '/info')
-      if (status === 200 && json?.serverPk) return json
+      if (status === 200 && json?.serverPk) {
+        targetServerPk = json.serverPk
+        return json
+      }
     } catch { /* connection refused: not up yet */ }
     await new Promise((resolve) => setTimeout(resolve, 1000))
   }
   throw new Error(`Server did not become ready within ${timeoutMs}ms at ${BASE} (GET /info never returned 200 + serverPk)`)
 }
 
-/** Mutates block (merkle root) as a side effect — call before block.export(). */
-function blockAuthHeaders(block, sk) {
-  block.merkle()
-  return { 'x-signature': signHash(block.hash(), sk) }
-}
+let targetServerPk = null
 
-function timestampAuthHeaders(publickey, sk) {
-  const timestamp = Math.floor(Date.now() / 1000)
-  const headers = { 'x-signature': signHash(hashTimestampAuth(publickey, String(timestamp)), sk) }
-  return { timestamp, headers }
-}
-
-/** Builds the {headers, body} pair shared by PUT /users/save and PUT /users/sign. */
-function buildBlockAuthRequest(chain, sk, extra = {}) {
-  const block = chain.lastblock
-  const headers = blockAuthHeaders(block, sk)
-  return { headers, body: { publickey: chain.getMyPublicKey(), block: block.export(), ...extra } }
+function requestAuthHeaders(method, url, json, sk) {
+  const fields = {
+    method,
+    path: url.pathname + url.search,
+    timestamp: Math.floor(Date.now() / 1000),
+    nonce: toHex(randomBytes(16)),
+    body: json,
+    serverPk: targetServerPk,
+    publickey: publicFromPrivate(sk),
+  }
+  return {
+    [REQUEST_AUTH_HEADERS.publickey]: fields.publickey,
+    [REQUEST_AUTH_HEADERS.timestamp]: String(fields.timestamp),
+    [REQUEST_AUTH_HEADERS.nonce]: fields.nonce,
+    [REQUEST_AUTH_HEADERS.signature]: signHash(hashRequestAuth(fields), sk),
+  }
 }
 
 function toHex(bytes) {
@@ -175,14 +183,14 @@ async function registerCitizen(name, genesisDate = new Date()) {
 }
 
 async function saveBlock(citizen) {
-  const { headers, body } = buildBlockAuthRequest(citizen.chain, citizen.sk, { devicetoken: citizen.devicetoken })
-  const { status, json } = await request('PUT', '/users/save', { body, headers })
+  const body = { block: citizen.chain.lastblock.export(), devicetoken: citizen.devicetoken }
+  const { status, json } = await request('PUT', '/users/save', { body, signedBy: citizen.sk })
   assert(status === 200, `save(${citizen.name}) expected 200, got ${status}: ${JSON.stringify(json)}`)
 }
 
 async function signBlock(citizen) {
-  const { headers, body } = buildBlockAuthRequest(citizen.chain, citizen.sk)
-  const { status, json } = await request('PUT', '/users/sign', { body, headers })
+  const body = { block: citizen.chain.lastblock.export() }
+  const { status, json } = await request('PUT', '/users/sign', { body, signedBy: citizen.sk })
   assert(status === 200, `sign(${citizen.name}) expected 200, got ${status}: ${JSON.stringify(json)}`)
 }
 
@@ -231,26 +239,18 @@ async function main() {
   })
 
   await step('A (core admin) validates B through the validation queue', async () => {
-    const listAuth = timestampAuthHeaders(A.chain.getMyPublicKey(), A.sk)
-    const { status: listStatus, json: list } = await request('GET', '/validations', {
-      headers: listAuth.headers,
-      query: { publickey: A.chain.getMyPublicKey(), timestamp: listAuth.timestamp },
-    })
+    const { status: listStatus, json: list } = await request('GET', '/validations', { signedBy: A.sk })
     assert(listStatus === 200, `GET /validations expected 200, got ${listStatus}: ${JSON.stringify(list)}`)
     assert(list.some((v) => v.pk === B.chain.getMyPublicKey()), 'B should appear in the pending list')
 
-    const detailAuth = timestampAuthHeaders(A.chain.getMyPublicKey(), A.sk)
-    const { status: detailStatus, json: detail } = await request('GET', `/validations/${B.chain.getMyPublicKey()}`, {
-      headers: detailAuth.headers,
-      query: { publickey: A.chain.getMyPublicKey(), timestamp: detailAuth.timestamp },
-    })
+    const { status: detailStatus, json: detail } = await request('GET', `/validations/${B.chain.getMyPublicKey()}`, { signedBy: A.sk })
     assert(detailStatus === 200, `GET /validations/:pk expected 200, got ${detailStatus}: ${JSON.stringify(detail)}`)
 
     const candidateChain = new CitizenBlockchain(detail.blocks)
     const initBlock = candidateChain.validateAccount(A.sk)
     const { status: approveStatus, json: approveJson } = await request('POST', `/validations/${B.chain.getMyPublicKey()}/approve`, {
-      body: { publickey: A.chain.getMyPublicKey(), block: initBlock.export() },
-      headers: blockAuthHeaders(initBlock, A.sk),
+      body: { block: initBlock.export() },
+      signedBy: A.sk,
     })
     assert(approveStatus === 200, `approve expected 200, got ${approveStatus}: ${JSON.stringify(approveJson)}`)
 
@@ -310,11 +310,7 @@ async function main() {
 
   let rawPending
   await step("B's tx/list returns a bare TxWire[] (PROTOCOL.md §5.2)", async () => {
-    const { timestamp, headers } = timestampAuthHeaders(B.chain.getMyPublicKey(), B.sk)
-    const { status, json } = await request('GET', '/tx/list', {
-      headers,
-      query: { publickey: B.chain.getMyPublicKey(), timestamp },
-    })
+    const { status, json } = await request('GET', '/tx/list', { signedBy: B.sk })
     assert(status === 200, `expected 200, got ${status}: ${JSON.stringify(json)}`)
     assert(Array.isArray(json) && json.length === 1, `expected exactly 1 pending tx, got ${JSON.stringify(json)}`)
     rawPending = json[0]
@@ -400,11 +396,7 @@ async function main() {
 
   await step("sign B's block: the server cashes the paper and the core ecosystem counter-signs", async () => {
     await signBlock(B)
-    const mineAuth = timestampAuthHeaders(B.chain.getMyPublicKey(), B.sk)
-    const { json } = await request('GET', '/validations/mine', {
-      headers: mineAuth.headers,
-      query: { publickey: B.chain.getMyPublicKey(), timestamp: mineAuth.timestamp },
-    })
+    const { json } = await request('GET', '/validations/mine', { signedBy: B.sk })
     assert(json.blocks[0].s === corePk, `B's last block should be signed by the core, got signer ${json.blocks[0].s}`)
   })
 
@@ -430,11 +422,7 @@ async function main() {
 
   let orderEarnRaw
   await step('the order executes immediately and B sees it queued — no separate claim step', async () => {
-    const { timestamp, headers } = timestampAuthHeaders(B.chain.getMyPublicKey(), B.sk)
-    const { status, json } = await request('GET', '/tx/list', {
-      headers,
-      query: { publickey: B.chain.getMyPublicKey(), timestamp },
-    })
+    const { status, json } = await request('GET', '/tx/list', { signedBy: B.sk })
     assert(status === 200, `expected 200, got ${status}: ${JSON.stringify(json)}`)
     assert(json.length === 1, `expected exactly 1 pending tx (the order payout), got ${JSON.stringify(json)}`)
     assert(json[0].t === 13, `expected an EARN (13), got type ${json[0].t}`)
@@ -450,11 +438,7 @@ async function main() {
   })
 
   await step('A (admin) distributes the core ecosystem salary', async () => {
-    const authAuth = timestampAuthHeaders(A.chain.getMyPublicKey(), A.sk)
-    const { status, json } = await request('POST', `/ecosystems/${corePk}/distribute`, {
-      body: { publickey: A.chain.getMyPublicKey(), timestamp: authAuth.timestamp },
-      headers: authAuth.headers,
-    })
+    const { status, json } = await request('POST', `/ecosystems/${corePk}/distribute`, { signedBy: A.sk })
     assert(status === 200, `expected 200, got ${status}: ${JSON.stringify(json)}`)
   })
 
@@ -472,11 +456,7 @@ async function main() {
   await step("B cashes it while his engagement is still running, and the core's signature closes his block", async () => {
     B.chain.cashPaper(TransactionMaker.make(secondPaperTx.export()))
     await signBlock(B)
-    const mineAuth = timestampAuthHeaders(B.chain.getMyPublicKey(), B.sk)
-    const { json } = await request('GET', '/validations/mine', {
-      headers: mineAuth.headers,
-      query: { publickey: B.chain.getMyPublicKey(), timestamp: mineAuth.timestamp },
-    })
+    const { json } = await request('GET', '/validations/mine', { signedBy: B.sk })
     B.chain = new CitizenBlockchain(json.blocks)
     assert(B.chain.lastblock.isSigned(), "B's last block should now be signed")
   })

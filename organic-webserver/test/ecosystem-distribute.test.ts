@@ -1,8 +1,9 @@
 import request from 'supertest';
 import app from "../app.js";
+import { signedRequest } from './helpers/request-auth.js';
 import assert from "assert";
 import { User, Ecosystem, WaitingTx } from "../app/models.js";
-import { CitizenBlockchain, EcosystemBlockchain, signHash, hashTimestampAuth } from 'organic-money/src/index.js';
+import { CitizenBlockchain, EcosystemBlockchain } from 'organic-money/src/index.js';
 import { encryptEcosystemKey } from '../app/utils/ecosystem-key.util.js';
 
 const SECRETKEY = process.env.ORGANIC_SECRET_KEY as string
@@ -32,12 +33,6 @@ async function makeEcosystem(adminPk: string, name = "Coop") {
 async function reload(pk: string) {
     const row = await Ecosystem.findOne({ where: { publickey: pk } }) as any
     return new EcosystemBlockchain(row.blocks)
-}
-
-function timestampAuth(pk: string, sk: string) {
-    const ts = Math.floor(Date.now() / 1000)
-    const sig = signHash(hashTimestampAuth(pk, ts), sk)
-    return { ts, sig }
 }
 
 /**
@@ -82,37 +77,23 @@ describe('POST /ecosystems/:pk/distribute', () => {
         const { pk: adminPk } = await makeActiveCitizen("Admin1")
         const ecoPk = await makeEcosystem(adminPk)
         const { pk: strangerPk, sk: strangerSk } = await makeActiveCitizen("Stranger")
-        const { ts, sig } = timestampAuth(strangerPk, strangerSk)
-
-        const res = await request(app)
-            .post(`/api/v1/ecosystems/${ecoPk}/distribute`)
-            .set('x-signature', sig)
-            .send({ publickey: strangerPk, timestamp: ts })
+        const res = await signedRequest('post', `/api/v1/ecosystems/${ecoPk}/distribute`, strangerSk, {})
             .expect(403)
         assert.equal(res.body.code, 'NOT_CORE_ADMIN')
     });
 
-    it('Should not let a non-admin authenticated in the query distribute in the name of an admin.', async () => {
+    it('Should not let a non-admin distribute in the name of an admin by naming their publickey.', async () => {
         const { pk: adminPk } = await makeActiveCitizen("Admin1")
         const ecoPk = await makeEcosystem(adminPk)
-        const { pk: strangerPk, sk: strangerSk } = await makeActiveCitizen("Stranger")
-        const { ts, sig } = timestampAuth(strangerPk, strangerSk)
+        const { sk: strangerSk } = await makeActiveCitizen("Stranger")
 
-        await request(app)
-            .post(`/api/v1/ecosystems/${ecoPk}/distribute`)
-            .query({ publickey: strangerPk, timestamp: ts })
-            .set('x-signature', sig)
-            .send({ publickey: adminPk })
+        await signedRequest('post', `/api/v1/ecosystems/${ecoPk}/distribute`, strangerSk, {}, { publickey: adminPk })
             .expect(401)
     });
 
     it('Should return 404 for an unknown ecosystem.', async () => {
         const { pk, sk } = await makeActiveCitizen("Admin2")
-        const { ts, sig } = timestampAuth(pk, sk)
-        await request(app)
-            .post('/api/v1/ecosystems/unknown-pk/distribute')
-            .set('x-signature', sig)
-            .send({ publickey: pk, timestamp: ts })
+        await signedRequest('post', '/api/v1/ecosystems/unknown-pk/distribute', sk, {})
             .expect(404)
     });
 
@@ -143,11 +124,7 @@ describe('POST /ecosystems/:pk/distribute', () => {
         // Total ratio is 2 (admin + actor); 1 unit funded is not enough for a round.
         const { adminPk, adminSk, actorPk, ecoPk } = await setupTwoActorEcosystem("Actor1", "Payer1", 1)
 
-        const { ts, sig } = timestampAuth(adminPk, adminSk)
-        await request(app)
-            .post(`/api/v1/ecosystems/${ecoPk}/distribute`)
-            .set('x-signature', sig)
-            .send({ publickey: adminPk, timestamp: ts })
+        await signedRequest('post', `/api/v1/ecosystems/${ecoPk}/distribute`, adminSk, {})
             .expect(200)
 
         const waitingForAdmin = await WaitingTx.count({ where: { target: adminPk } })
@@ -163,11 +140,7 @@ describe('POST /ecosystems/:pk/distribute', () => {
         // Total ratio is 2; 2 units funded make exactly 1 round (1 unit per actor).
         const { adminPk, adminSk, actorPk, ecoPk } = await setupTwoActorEcosystem("Actor2", "Payer2", 2)
 
-        const { ts, sig } = timestampAuth(adminPk, adminSk)
-        await request(app)
-            .post(`/api/v1/ecosystems/${ecoPk}/distribute`)
-            .set('x-signature', sig)
-            .send({ publickey: adminPk, timestamp: ts })
+        await signedRequest('post', `/api/v1/ecosystems/${ecoPk}/distribute`, adminSk, {})
             .expect(200)
 
         const adminWaiting = await WaitingTx.findOne({ where: { target: adminPk } }) as any
@@ -186,11 +159,7 @@ describe('POST /ecosystems/:pk/distribute', () => {
         // actor) and leave 1 unit unspent for a future round.
         const { adminPk, adminSk, actorPk, ecoPk } = await setupTwoActorEcosystem("Actor3", "Payer3", 5)
 
-        const { ts, sig } = timestampAuth(adminPk, adminSk)
-        await request(app)
-            .post(`/api/v1/ecosystems/${ecoPk}/distribute`)
-            .set('x-signature', sig)
-            .send({ publickey: adminPk, timestamp: ts })
+        await signedRequest('post', `/api/v1/ecosystems/${ecoPk}/distribute`, adminSk, {})
             .expect(200)
 
         const adminWaiting = await WaitingTx.findOne({ where: { target: adminPk } }) as any
@@ -205,13 +174,9 @@ describe('POST /ecosystems/:pk/distribute', () => {
     it('Should pay salaries once and answer both of two simultaneous distributions.', async () => {
         const { adminPk, adminSk, actorPk, ecoPk } = await setupTwoActorEcosystem("Actor5", "Payer5", 2)
 
-        const responses = await Promise.all([1, 2].map(() => {
-            const { ts, sig } = timestampAuth(adminPk, adminSk)
-            return request(app)
-                .post(`/api/v1/ecosystems/${ecoPk}/distribute`)
-                .set('x-signature', sig)
-                .send({ publickey: adminPk, timestamp: ts })
-        }))
+        const responses = await Promise.all([1, 2].map(() =>
+            signedRequest('post', `/api/v1/ecosystems/${ecoPk}/distribute`, adminSk)
+        ))
 
         assert.deepEqual(responses.map(res => res.status), [200, 200])
         const payouts = await WaitingTx.count({ where: { target: [adminPk, actorPk] } })
@@ -227,11 +192,7 @@ describe('POST /ecosystems/:pk/distribute', () => {
         await User.update({ blocks: adminBc.export() }, { where: { publickey: adminPk } })
         await request(app).post(`/api/v1/ecosystems/${ecoPk}/tx`).send({ tx: payerRoleTx.export() }).expect(200)
 
-        const { ts, sig } = timestampAuth(payerPk, payerSk)
-        const res = await request(app)
-            .post(`/api/v1/ecosystems/${ecoPk}/distribute`)
-            .set('x-signature', sig)
-            .send({ publickey: payerPk, timestamp: ts })
+        const res = await signedRequest('post', `/api/v1/ecosystems/${ecoPk}/distribute`, payerSk, {})
             .expect(403)
         assert.equal(res.body.code, 'NOT_CORE_ADMIN')
     });

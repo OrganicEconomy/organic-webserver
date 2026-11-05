@@ -1,8 +1,9 @@
 import request from 'supertest';
 import app from "../app.js";
+import { signedRequest } from './helpers/request-auth.js';
 import assert from "assert";
 import { User, Ecosystem } from "../app/models.js";
-import { CitizenBlockchain, EcosystemBlockchain, signHash, hashTimestampAuth } from 'organic-money/src/index.js';
+import { CitizenBlockchain, EcosystemBlockchain } from 'organic-money/src/index.js';
 
 const SECRETKEY = process.env.ORGANIC_SECRET_KEY as string
 
@@ -17,12 +18,6 @@ async function makeActiveCitizen(name: string) {
     return { sk, pk }
 }
 
-function timestampAuth(pk: string, sk: string) {
-    const ts = Math.floor(Date.now() / 1000)
-    const sig = signHash(hashTimestampAuth(pk, ts), sk)
-    return { ts, sig }
-}
-
 describe('POST /ecosystems', () => {
     it('Should return 401 for an unauthenticated request (missing signature).', async () => {
         await request(app)
@@ -35,17 +30,13 @@ describe('POST /ecosystems', () => {
         const { pk } = await makeActiveCitizen("Founder1")
         await request(app)
             .post('/api/v1/ecosystems')
-            .send({ founderPk: pk, timestamp: Math.floor(Date.now() / 1000), name: "Boulangerie" })
+            .send({ name: "Boulangerie" })
             .expect(401)
     });
 
     it('Should return 400 for a missing name, once authenticated.', async () => {
         const { pk, sk } = await makeActiveCitizen("FounderNoName")
-        const { ts, sig } = timestampAuth(pk, sk)
-        await request(app)
-            .post('/api/v1/ecosystems')
-            .set('x-signature', sig)
-            .send({ founderPk: pk, timestamp: ts })
+        await signedRequest('post', '/api/v1/ecosystems', sk, {})
             .expect(400)
     });
 
@@ -57,27 +48,17 @@ describe('POST /ecosystems', () => {
             mail: `${pk}@test.test`, password: "test", publickey: pk,
             name: "Pending", secretkey: sk, blocks: bc.export(), status: 'pending-validation'
         })
-        const auth = timestampAuth(pk, sk)
-
-        const res = await request(app)
-            .post('/api/v1/ecosystems')
-            .set('x-signature', auth.sig)
-            .send({ founderPk: pk, timestamp: auth.ts, name: "Boulangerie" })
+        const res = await signedRequest('post', '/api/v1/ecosystems', sk, { name: "Boulangerie" })
             .expect(403)
         assert.equal(res.body.code, 'UNKNOWN_USER')
     });
 
-    it('Should not let someone authenticated in the query create an ecosystem in the name of another citizen.', async () => {
+    it('Should not let someone create an ecosystem in the name of another citizen by naming their publickey.', async () => {
         await Ecosystem.destroy({ where: {}, truncate: true })
         const victim = await makeActiveCitizen("Victim")
         const stranger = await makeActiveCitizen("Stranger")
-        const strangerAuth = timestampAuth(stranger.pk, stranger.sk)
 
-        await request(app)
-            .post('/api/v1/ecosystems')
-            .query({ publickey: stranger.pk, timestamp: strangerAuth.ts })
-            .set('x-signature', strangerAuth.sig)
-            .send({ founderPk: victim.pk, name: "Spam" })
+        await signedRequest('post', '/api/v1/ecosystems', stranger.sk, { name: "Spam" }, { publickey: victim.pk })
             .expect(401)
 
         assert.equal(await Ecosystem.count(), 0)
@@ -86,12 +67,7 @@ describe('POST /ecosystems', () => {
     it('Should create the ecosystem with the founder as admin, and make the first one the core.', async () => {
         await Ecosystem.destroy({ where: {}, truncate: true })
         const { pk, sk } = await makeActiveCitizen("Founder2")
-        const { ts, sig } = timestampAuth(pk, sk)
-
-        const res = await request(app)
-            .post('/api/v1/ecosystems')
-            .set('x-signature', sig)
-            .send({ founderPk: pk, timestamp: ts, name: "Boulangerie associative", description: "Pain bio", lat: 45.75, lng: 4.85 })
+        const res = await signedRequest('post', '/api/v1/ecosystems', sk, { name: "Boulangerie associative", description: "Pain bio", lat: 45.75, lng: 4.85 })
             .expect(200)
 
         assert.equal(res.body.iscore, true)
@@ -106,19 +82,11 @@ describe('POST /ecosystems', () => {
     it('Should not make a second ecosystem the core.', async () => {
         await Ecosystem.destroy({ where: {}, truncate: true })
         const first = await makeActiveCitizen("Founder3")
-        const auth1 = timestampAuth(first.pk, first.sk)
-        await request(app)
-            .post('/api/v1/ecosystems')
-            .set('x-signature', auth1.sig)
-            .send({ founderPk: first.pk, timestamp: auth1.ts, name: "First" })
+        await signedRequest('post', '/api/v1/ecosystems', first.sk, { name: "First" })
             .expect(200)
 
         const second = await makeActiveCitizen("Founder4")
-        const auth2 = timestampAuth(second.pk, second.sk)
-        const res = await request(app)
-            .post('/api/v1/ecosystems')
-            .set('x-signature', auth2.sig)
-            .send({ founderPk: second.pk, timestamp: auth2.ts, name: "Second" })
+        const res = await signedRequest('post', '/api/v1/ecosystems', second.sk, { name: "Second" })
             .expect(200)
 
         assert.equal(res.body.iscore, false)
@@ -129,14 +97,10 @@ describe('GET /ecosystems', () => {
     it('Should list created ecosystems, sorted by distance when lat/lng are given.', async () => {
         await Ecosystem.destroy({ where: {}, truncate: true })
         const near = await makeActiveCitizen("Near")
-        const nearAuth = timestampAuth(near.pk, near.sk)
-        await request(app).post('/api/v1/ecosystems').set('x-signature', nearAuth.sig)
-            .send({ founderPk: near.pk, timestamp: nearAuth.ts, name: "Near", lat: 45.76, lng: 4.86 }).expect(200)
+        await signedRequest('post', '/api/v1/ecosystems', near.sk, { name: "Near", lat: 45.76, lng: 4.86 }).expect(200)
 
         const far = await makeActiveCitizen("Far")
-        const farAuth = timestampAuth(far.pk, far.sk)
-        await request(app).post('/api/v1/ecosystems').set('x-signature', farAuth.sig)
-            .send({ founderPk: far.pk, timestamp: farAuth.ts, name: "Far", lat: 48.85, lng: 2.35 }).expect(200)
+        await signedRequest('post', '/api/v1/ecosystems', far.sk, { name: "Far", lat: 48.85, lng: 2.35 }).expect(200)
 
         const res = await request(app)
             .get('/api/v1/ecosystems')
@@ -158,9 +122,7 @@ describe('GET /ecosystems/mine', () => {
     it("Should list the ecosystems where the given key has a role.", async () => {
         await Ecosystem.destroy({ where: {}, truncate: true })
         const { pk, sk } = await makeActiveCitizen("Founder5")
-        const auth = timestampAuth(pk, sk)
-        await request(app).post('/api/v1/ecosystems').set('x-signature', auth.sig)
-            .send({ founderPk: pk, timestamp: auth.ts, name: "Atelier vélo" }).expect(200)
+        await signedRequest('post', '/api/v1/ecosystems', sk, { name: "Atelier vélo" }).expect(200)
 
         const res = await request(app)
             .get('/api/v1/ecosystems/mine')
@@ -181,9 +143,7 @@ describe('GET /ecosystems/:pk', () => {
     it('Should return full info for a known ecosystem.', async () => {
         await Ecosystem.destroy({ where: {}, truncate: true })
         const { pk, sk } = await makeActiveCitizen("Founder6")
-        const auth = timestampAuth(pk, sk)
-        const created = await request(app).post('/api/v1/ecosystems').set('x-signature', auth.sig)
-            .send({ founderPk: pk, timestamp: auth.ts, name: "Épicerie" }).expect(200)
+        const created = await signedRequest('post', '/api/v1/ecosystems', sk, { name: "Épicerie" }).expect(200)
 
         const res = await request(app)
             .get(`/api/v1/ecosystems/${created.body.publickey}`)
@@ -198,32 +158,19 @@ describe('PUT /ecosystems/:pk/meta', () => {
     it('Should return 403 for a non-admin.', async () => {
         await Ecosystem.destroy({ where: {}, truncate: true })
         const { pk, sk } = await makeActiveCitizen("Founder7")
-        const auth = timestampAuth(pk, sk)
-        const created = await request(app).post('/api/v1/ecosystems').set('x-signature', auth.sig)
-            .send({ founderPk: pk, timestamp: auth.ts, name: "Café" }).expect(200)
+        const created = await signedRequest('post', '/api/v1/ecosystems', sk, { name: "Café" }).expect(200)
 
         const other = await makeActiveCitizen("NotAdmin")
-        const otherAuth = timestampAuth(other.pk, other.sk)
-
-        await request(app)
-            .put(`/api/v1/ecosystems/${created.body.publickey}/meta`)
-            .set('x-signature', otherAuth.sig)
-            .send({ publickey: other.pk, timestamp: otherAuth.ts, name: "Hacked" })
+        await signedRequest('put', `/api/v1/ecosystems/${created.body.publickey}/meta`, other.sk, { name: "Hacked" })
             .expect(403)
     });
 
     it('Should update the metadata when called by an admin.', async () => {
         await Ecosystem.destroy({ where: {}, truncate: true })
         const { pk, sk } = await makeActiveCitizen("Founder8")
-        const auth = timestampAuth(pk, sk)
-        const created = await request(app).post('/api/v1/ecosystems').set('x-signature', auth.sig)
-            .send({ founderPk: pk, timestamp: auth.ts, name: "Café" }).expect(200)
+        const created = await signedRequest('post', '/api/v1/ecosystems', sk, { name: "Café" }).expect(200)
 
-        const auth2 = timestampAuth(pk, sk)
-        await request(app)
-            .put(`/api/v1/ecosystems/${created.body.publickey}/meta`)
-            .set('x-signature', auth2.sig)
-            .send({ publickey: pk, timestamp: auth2.ts, description: "Torréfaction locale" })
+        await signedRequest('put', `/api/v1/ecosystems/${created.body.publickey}/meta`, sk, { description: "Torréfaction locale" })
             .expect(200)
 
         const row = await Ecosystem.findOne({ where: { publickey: created.body.publickey } }) as any
@@ -234,18 +181,11 @@ describe('PUT /ecosystems/:pk/meta', () => {
     it('Should not let a non-admin authenticated in the query edit in the name of an admin.', async () => {
         await Ecosystem.destroy({ where: {}, truncate: true })
         const { pk, sk } = await makeActiveCitizen("Founder9")
-        const auth = timestampAuth(pk, sk)
-        const created = await request(app).post('/api/v1/ecosystems').set('x-signature', auth.sig)
-            .send({ founderPk: pk, timestamp: auth.ts, name: "Café" }).expect(200)
+        const created = await signedRequest('post', '/api/v1/ecosystems', sk, { name: "Café" }).expect(200)
 
         const stranger = await makeActiveCitizen("Stranger")
-        const strangerAuth = timestampAuth(stranger.pk, stranger.sk)
 
-        await request(app)
-            .put(`/api/v1/ecosystems/${created.body.publickey}/meta`)
-            .query({ publickey: stranger.pk, timestamp: strangerAuth.ts })
-            .set('x-signature', strangerAuth.sig)
-            .send({ publickey: pk, name: "Hacked" })
+        await signedRequest('put', `/api/v1/ecosystems/${created.body.publickey}/meta`, stranger.sk, { name: "Hacked" }, { publickey: pk })
             .expect(401)
 
         const row = await Ecosystem.findOne({ where: { publickey: created.body.publickey } }) as any

@@ -8,31 +8,27 @@ All responses are JSON. Non-2xx responses carry `{ "error": "<message>", "code"?
 
 ## Authentication
 
-Two authentication schemes, both via the `x-signature` header (PROTOCOL.md §5.1).
-
-### Block auth (`PUT /users/save`, `PUT /users/sign`)
-
-The client signs the hash of the block being submitted:
+One scheme for every authenticated route, request-auth (PROTOCOL.md §5.1): the client signs the request itself — method, path, body, target server — and the server accepts each signature once.
 
 ```js
-const block = BlockMaker.make(blockObj)
-block.merkle()
-const signature = signHash(block.hash(), secretKey)
+import { hashRequestAuth, REQUEST_AUTH_HEADERS } from 'organic-protocol'
+
+const body = JSON.stringify(payload)          // send exactly this string
+const fields = {
+  method: 'PUT',
+  path: '/api/v1/users/save',                 // path and query, as the server receives them
+  timestamp: Math.floor(Date.now() / 1000),
+  nonce: randomHex(16),
+  body,                                       // '' when there is no body
+  serverPk,                                   // from GET /info
+  publickey,
+}
+const signature = signHash(hashRequestAuth(fields), secretKey)
 ```
 
-Send: `x-signature: <signature>` + body `{ publickey, block, ... }`.
+Send the four headers `x-organic-publickey`, `x-organic-timestamp`, `x-organic-nonce` and `x-signature`. Bodies carry no identity: the caller is the authenticated public key.
 
-### Timestamp auth (`GET /tx/list`, `POST /users/password`)
-
-The client signs `sha256(publickey + ":" + timestamp)` where `timestamp` is a Unix timestamp in seconds:
-
-```js
-const signature = signHash(hashTimestampAuth(publickey, timestamp), secretKey)
-```
-
-Send: `x-signature: <signature>` + `publickey`/`timestamp` as query params (GET) or body fields (POST).
-
-Tolerance: ±5 minutes. Requests outside this window, or with a bad signature, are rejected with 401.
+Tolerance: ±5 minutes. Answers: `401` for a missing header or an expired timestamp, `401 INVALID_SIGNATURE` for a signature that does not match, `401 REPLAYED_REQUEST` for a signed request already accepted once.
 
 ---
 
@@ -107,20 +103,21 @@ The response never includes the hashed password.
 
 ---
 
-### `PUT /users/save` — requires block auth
+### `PUT /users/save` — requires request-auth
 
 Save an updated block to the user's blockchain. Also removes any `WaitingTx` included in that block.
 
-**Headers:** `x-signature: <signature>`
+**Headers:** the request-auth headers
 
 **Body:**
 ```json
-{ "publickey": "02...", "block": { ...block export }, "devicetoken": "..." }
+{ "block": { ...block export }, "devicetoken": "..." }
 ```
 
 **Responses:**
 - `200` — success
-- `401` — missing `publickey`/`block`/`x-signature`, or the signature doesn't verify (block auth itself rejects missing fields — a bare 400 never reaches this route)
+- `400` — missing `block`
+- `401` — see Authentication
 - `400` — the block is invalid: not a citizen block, drops a transaction of the saved version of the last block, leaves the chain invalid, or holds a paper that was not cashed through `PUT /users/sign` by this citizen
 - `404` — unknown user
 - `409 DEVICE_REVOKED` — `devicetoken` does not match the active device (a more recent login happened elsewhere)
@@ -128,15 +125,15 @@ Save an updated block to the user's blockchain. Also removes any `WaitingTx` inc
 
 ---
 
-### `PUT /users/sign` — requires block auth
+### `PUT /users/sign` — requires request-auth
 
 Cash the papers of the submitted last block. It is the only way to cash a paper. For each paper the block holds that this citizen did not issue, the server checks the issuer (registered, active, paper in their saved chain) and that nobody else cashed it. It then registers the paper in this citizen's name and has the block counter-signed by this server's core, the paper's referent, all at once. The issuer loses the units, the casher gains the experience. A block that brings no newly cashed paper changes nothing. When a paper is refused, nothing is cashed and the error names that paper: `{ "error", "code", "tx": "<paper hash>" }`.
 
-**Headers:** `x-signature: <signature>`
+**Headers:** the request-auth headers
 
 **Body:**
 ```json
-{ "publickey": "02...", "block": { ...block export } }
+{ "block": { ...block export } }
 ```
 
 **Responses:**
@@ -144,7 +141,8 @@ Cash the papers of the submitted last block. It is the only way to cash a paper.
 - `400` — the block is invalid (same rules as `PUT /users/save`)
 - `400 INVALID_CHAIN` — a paper's issuer has an invalid saved chain
 - `400 INVALID_TX` — a paper's referent is not this server's core
-- `401` — missing `publickey`/`block`/`x-signature`, or the signature doesn't verify (block auth itself rejects missing fields — a bare 400 never reaches this route)
+- `400` — missing `block`
+- `401` — see Authentication
 - `403` — the account is not active
 - `403 UNKNOWN_SENDER` — a paper's issuer is unknown or not active
 - `404` — unknown user
@@ -154,21 +152,21 @@ Cash the papers of the submitted last block. It is the only way to cash a paper.
 
 ---
 
-### `POST /users/password` — requires timestamp auth
+### `POST /users/password` — requires request-auth
 
 Change the login password. The client decrypts `secretkey` with the old password, re-encrypts it with the new one, and sends both — the server never reads either password in the clear, and updates its bcrypt hash plus the re-encrypted key without decrypting it.
 
-**Headers:** `x-signature: <signature>`
+**Headers:** the request-auth headers
 
 **Body:**
 ```json
-{ "publickey": "02...", "timestamp": 1753000000, "newpassword": "plaintext", "secretkey": "hex-encoded-encrypted-sk" }
+{ "newpassword": "plaintext", "secretkey": "hex-encoded-encrypted-sk" }
 ```
 
 **Responses:**
 - `200` — success
 - `400` — missing fields
-- `401` — missing/invalid signature or expired timestamp
+- `401` — see Authentication
 - `404` — unknown user
 
 ---
@@ -196,17 +194,15 @@ Transaction export format: `{ v, d, s, p, m, i, t, h }` — see PROTOCOL.md §2.
 
 ---
 
-### `GET /tx/list` — requires timestamp auth
+### `GET /tx/list` — requires request-auth
 
-List pending transactions for a given public key.
+List pending transactions for the authenticated public key.
 
-**Headers:** `x-signature: <signature>`
-
-**Query params:** `?publickey=<pk>&timestamp=<unix_seconds>`
+**Headers:** the request-auth headers
 
 **Responses:**
 - `200` — array of transaction exports
-- `401` — missing signature, invalid signature, or expired timestamp
+- `401` — see Authentication
 
 ---
 

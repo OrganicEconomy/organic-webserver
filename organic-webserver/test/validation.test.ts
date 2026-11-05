@@ -2,16 +2,11 @@ import request from 'supertest';
 import app from "../app.js";
 import assert from "assert";
 import { User, Ecosystem } from "../app/models.js";
-import { CitizenBlockchain, EcosystemBlockchain, BlockMaker, signHash, hashTimestampAuth, publicFromPrivate } from 'organic-money/src/index.js';
+import { CitizenBlockchain, EcosystemBlockchain } from 'organic-money/src/index.js';
 import { encryptEcosystemKey } from '../app/utils/ecosystem-key.util.js';
+import { signedRequest } from './helpers/request-auth.js';
 
 const SECRETKEY = process.env.ORGANIC_SECRET_KEY as string
-
-function signBlock(blockObj: object, sk: string) {
-    const block = BlockMaker.make(blockObj)
-    block.merkle()
-    return signHash(block.hash(), sk)
-}
 
 /** A core ecosystem with one known admin, ready to approve/reject candidates. */
 async function makeCoreWithAdmin() {
@@ -52,12 +47,6 @@ async function makePendingCandidate(name = "Candidate") {
     return { bc, sk, pk }
 }
 
-function timestampAuth(pk: string, sk: string) {
-    const ts = Math.floor(Date.now() / 1000)
-    const sig = signHash(hashTimestampAuth(pk, ts), sk)
-    return { ts, sig }
-}
-
 describe('GET /validations', () => {
     it('Should return 403 NOT_CORE_ADMIN for someone who is not a core admin.', async () => {
         await Ecosystem.destroy({ where: {}, truncate: true })
@@ -65,12 +54,7 @@ describe('GET /validations', () => {
         const notAdminBc = new CitizenBlockchain()
         const notAdminSk = notAdminBc.startBlockchain("NotAdmin", new Date(), SECRETKEY)
         const notAdminPk = notAdminBc.getMyPublicKey()
-        const { ts, sig } = timestampAuth(notAdminPk, notAdminSk)
-
-        const res = await request(app)
-            .get('/api/v1/validations')
-            .set('x-signature', sig)
-            .query({ publickey: notAdminPk, timestamp: ts })
+        const res = await signedRequest('get', '/api/v1/validations', notAdminSk)
             .expect(403)
         assert.equal(res.body.code, 'NOT_CORE_ADMIN')
         void adminPk
@@ -81,12 +65,7 @@ describe('GET /validations', () => {
         await User.destroy({ where: {}, truncate: true })
         const { adminSk, adminPk } = await makeCoreWithAdmin()
         const { pk: candidatePk } = await makePendingCandidate("Camille")
-        const { ts, sig } = timestampAuth(adminPk, adminSk)
-
-        const res = await request(app)
-            .get('/api/v1/validations')
-            .set('x-signature', sig)
-            .query({ publickey: adminPk, timestamp: ts })
+        const res = await signedRequest('get', '/api/v1/validations', adminSk)
             .expect(200)
 
         assert.equal(res.body.length, 1)
@@ -101,12 +80,7 @@ describe('GET /validations/:pk', () => {
         await Ecosystem.destroy({ where: {}, truncate: true })
         const { adminSk, adminPk } = await makeCoreWithAdmin()
         const { pk: candidatePk, bc } = await makePendingCandidate()
-        const { ts, sig } = timestampAuth(adminPk, adminSk)
-
-        const res = await request(app)
-            .get(`/api/v1/validations/${candidatePk}`)
-            .set('x-signature', sig)
-            .query({ publickey: adminPk, timestamp: ts })
+        const res = await signedRequest('get', `/api/v1/validations/${candidatePk}`, adminSk)
             .expect(200)
 
         assert.equal(res.body.name, "Candidate")
@@ -116,12 +90,7 @@ describe('GET /validations/:pk', () => {
     it('Should return 404 for an unknown candidate.', async () => {
         await Ecosystem.destroy({ where: {}, truncate: true })
         const { adminSk, adminPk } = await makeCoreWithAdmin()
-        const { ts, sig } = timestampAuth(adminPk, adminSk)
-
-        await request(app)
-            .get('/api/v1/validations/unknown-pk')
-            .set('x-signature', sig)
-            .query({ publickey: adminPk, timestamp: ts })
+        await signedRequest('get', '/api/v1/validations/unknown-pk', adminSk)
             .expect(404)
     });
 });
@@ -144,23 +113,17 @@ describe('GET /validations/status/:pk', () => {
 });
 
 describe('GET /validations/mine', () => {
-    it('Should return 401 without a valid timestamp signature.', async () => {
-        const { pk } = await makePendingCandidate()
+    it('Should return 401 without a request signature.', async () => {
+        await makePendingCandidate()
 
         await request(app)
             .get('/api/v1/validations/mine')
-            .query({ publickey: pk, timestamp: Math.floor(Date.now() / 1000) })
             .expect(401)
     });
 
     it('Should return the status and blocks of the authenticated account.', async () => {
         const { pk, sk, bc } = await makePendingCandidate()
-        const { ts, sig } = timestampAuth(pk, sk)
-
-        const res = await request(app)
-            .get('/api/v1/validations/mine')
-            .set('x-signature', sig)
-            .query({ publickey: pk, timestamp: ts })
+        const res = await signedRequest('get', '/api/v1/validations/mine', sk)
             .expect(200)
 
         assert.deepEqual(res.body, { status: 'pending-validation', blocks: bc.export() })
@@ -168,11 +131,11 @@ describe('GET /validations/mine', () => {
 });
 
 describe('POST /validations/:pk/approve', () => {
-    it('Should return 401 without a valid block signature.', async () => {
+    it('Should return 401 without a request signature.', async () => {
         const { pk } = await makePendingCandidate()
         await request(app)
             .post(`/api/v1/validations/${pk}/approve`)
-            .send({ publickey: "someone", block: { v: 1, d: 20260101, p: "aaa", s: "bbb", r: "", m: "", i: "", t: 4, e: 1, h: "", x: [] } })
+            .send({ block: { v: 1, d: 20260101, p: "aaa", s: "bbb", r: "", m: "", i: "", t: 4, e: 1, h: "", x: [] } })
             .expect(401)
     });
 
@@ -189,10 +152,7 @@ describe('POST /validations/:pk/approve', () => {
         const initBlock = candidateBc.validateAccount(notAdminSk)
         const exported = initBlock.export()
 
-        const res = await request(app)
-            .post(`/api/v1/validations/${pk}/approve`)
-            .set('x-signature', signHash(initBlock.hash(), notAdminSk))
-            .send({ publickey: notAdminPk, block: exported })
+        const res = await signedRequest('post', `/api/v1/validations/${pk}/approve`, notAdminSk, { block: exported })
             .expect(403)
         assert.equal(res.body.code, 'NOT_CORE_ADMIN')
     });
@@ -206,10 +166,7 @@ describe('POST /validations/:pk/approve', () => {
         const initBlock = candidateBc.validateAccount(adminSk)
         const exported = initBlock.export()
 
-        await request(app)
-            .post(`/api/v1/validations/${pk}/approve`)
-            .set('x-signature', signHash(initBlock.hash(), adminSk))
-            .send({ publickey: adminPk, block: exported })
+        await signedRequest('post', `/api/v1/validations/${pk}/approve`, adminSk, { block: exported })
             .expect(200)
 
         const user = await User.findOne({ where: { publickey: pk } }) as any
@@ -233,10 +190,7 @@ describe('POST /validations/:pk/approve', () => {
         })
 
         const block = { v: 1, d: 20260101, p: "aaa", s: adminPk, r: "", m: "", i: "", t: 4, e: 1, h: "", x: [] }
-        const res = await request(app)
-            .post(`/api/v1/validations/${activePk}/approve`)
-            .set('x-signature', signBlock(block, adminSk))
-            .send({ publickey: adminPk, block })
+        const res = await signedRequest('post', `/api/v1/validations/${activePk}/approve`, adminSk, { block })
             .expect(409)
         assert.equal(res.body.code, 'ALREADY_VALIDATED')
     });
@@ -250,12 +204,7 @@ describe('POST /validations/:pk/reject', () => {
         const notAdminBc = new CitizenBlockchain()
         const notAdminSk = notAdminBc.startBlockchain("NotAdmin", new Date(), SECRETKEY)
         const notAdminPk = notAdminBc.getMyPublicKey()
-        const { ts, sig } = timestampAuth(notAdminPk, notAdminSk)
-
-        await request(app)
-            .post(`/api/v1/validations/${pk}/reject`)
-            .set('x-signature', sig)
-            .send({ publickey: notAdminPk, timestamp: ts })
+        await signedRequest('post', `/api/v1/validations/${pk}/reject`, notAdminSk, {})
             .expect(403)
     });
 
@@ -263,12 +212,7 @@ describe('POST /validations/:pk/reject', () => {
         await Ecosystem.destroy({ where: {}, truncate: true })
         const { adminSk, adminPk } = await makeCoreWithAdmin()
         const { pk } = await makePendingCandidate()
-        const { ts, sig } = timestampAuth(adminPk, adminSk)
-
-        await request(app)
-            .post(`/api/v1/validations/${pk}/reject`)
-            .set('x-signature', sig)
-            .send({ publickey: adminPk, timestamp: ts })
+        await signedRequest('post', `/api/v1/validations/${pk}/reject`, adminSk, {})
             .expect(200)
 
         const user = await User.findOne({ where: { publickey: pk } }) as any
@@ -276,19 +220,13 @@ describe('POST /validations/:pk/reject', () => {
         assert.equal(user.status, 'rejected')
     });
 
-    it('Should not let a non-admin authenticated in the query reject in the name of an admin.', async () => {
+    it('Should not let a non-admin reject in the name of an admin by naming their publickey.', async () => {
         await Ecosystem.destroy({ where: {}, truncate: true })
         const { adminPk } = await makeCoreWithAdmin()
         const { pk } = await makePendingCandidate()
         const strangerSk = "2222222222222222222222222222222222222222222222222222222222222222"
-        const strangerPk = publicFromPrivate(strangerSk)
-        const { ts, sig } = timestampAuth(strangerPk, strangerSk)
 
-        await request(app)
-            .post(`/api/v1/validations/${pk}/reject`)
-            .query({ publickey: strangerPk, timestamp: ts })
-            .set('x-signature', sig)
-            .send({ publickey: adminPk })
+        await signedRequest('post', `/api/v1/validations/${pk}/reject`, strangerSk, {}, { publickey: adminPk })
             .expect(401)
 
         const user = await User.findOne({ where: { publickey: pk } }) as any
