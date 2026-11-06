@@ -66,10 +66,10 @@ function makeForgedPaper(targetPk: string) {
     return forger.generatePaper(forgerSk, 1, targetPk)
 }
 
-function cashThroughSign(casher: { bc: InstanceType<typeof CitizenBlockchain>, sk: string, pk: string }, paper: any) {
+function cashThroughSign(casher: { bc: InstanceType<typeof CitizenBlockchain>, sk: string, pk: string }, paper: any, devicetoken = "casher-device") {
     casher.bc.cashPaper(TransactionMaker.make(paper.export()))
     const block = casher.bc.lastblock.export()
-    return signedRequest('put', '/api/users/sign', casher.sk, { block })
+    return signedRequest('put', '/api/users/sign', casher.sk, { block, devicetoken })
 }
 
 // A real DER-encoded SECP256K1 signature (hex) — length varies with r/s
@@ -200,6 +200,19 @@ describe('PUT /users/sign (cashing papers)', () => {
 
         const res = await cashThroughSign(casher, unsavedPaper).expect(404)
         assert.equal(res.body.code, 'TX_NOT_IN_CHAIN')
+    });
+
+    it('Should return 409 DEVICE_REVOKED and cash nothing when the devicetoken is stale.', async () => {
+        const ecoPk = await makeCore()
+        const casher = await registerCasher()
+        const paper = await makeSavedPaper(ecoPk)
+
+        const res = await cashThroughSign(casher, paper, "a-revoked-device").expect(409)
+        assert.equal(res.body.code, 'DEVICE_REVOKED')
+
+        assert.equal(await UsedPaper.findOne({ where: { hash: paper.signature } }), null)
+        const user = await User.findOne({ where: { publickey: casher.pk } }) as any
+        assert.equal(user.blocks.length, 2, "the block holding the paper must not be saved")
     });
 
     it('Should register a legitimate paper in the name of its casher and have the core sign the block.', async () => {

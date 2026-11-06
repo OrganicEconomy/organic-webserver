@@ -87,7 +87,7 @@ Register a new user. The blockchain must contain exactly one BirthBlock awaiting
 
 ### `POST /users/login`
 
-Rotates the `devicetoken`: the previous device becomes invalid (PROTOCOL.md §5.4) and gets `409 DEVICE_REVOKED` on its next `save`.
+Rotates the `devicetoken`: the previous device becomes invalid (PROTOCOL.md §5.4) and gets `409 DEVICE_REVOKED` on its next `save` or `sign`.
 
 **Body:**
 ```json
@@ -133,7 +133,7 @@ Cash the papers of the submitted last block. It is the only way to cash a paper.
 
 **Body:**
 ```json
-{ "block": { ...block export } }
+{ "block": { ...block export }, "devicetoken": "..." }
 ```
 
 **Responses:**
@@ -147,6 +147,7 @@ Cash the papers of the submitted last block. It is the only way to cash a paper.
 - `403 UNKNOWN_SENDER` — a paper's issuer is unknown or not active
 - `404` — unknown user
 - `404 TX_NOT_IN_CHAIN` — a paper is missing from its issuer's saved chain
+- `409 DEVICE_REVOKED` — `devicetoken` does not match the active device (a more recent login happened elsewhere)
 - `409 ALREADY_CASHED` — another citizen already cashed one of the papers
 - `409` — the block does not chain onto the stored last block
 
